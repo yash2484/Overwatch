@@ -384,7 +384,7 @@ git commit -m "feat(phase-1): auto-widening search windows (TDD)"
 **Interfaces:**
 - Produces: `AOI` (pydantic: `slug/name/vertical/bbox`, method `geometry() -> shapely Polygon`); `SHOWCASE_AOIS: dict[str, AOI]` keyed by slug (`vizhinjam`, `novo-progresso`, `porto-alegre`). bbox order: `(west, south, east, north)` in EPSG:4326.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 from pyproj import Geod
@@ -411,12 +411,12 @@ def test_aoi_areas_between_1_and_500_km2() -> None:
         assert 1.0 < area_km2 < 500.0, f"{aoi.slug}: {area_km2:.1f} km2"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `docker compose exec api pytest tests/test_aois.py -v`
 Expected: FAIL — module not found
 
-- [ ] **Step 3: Implement `aois.py`**
+- [x] **Step 3: Implement `aois.py`**
 
 ```python
 """Hardcoded showcase AOIs (design spec §5). Seed boxes — refined during Phase 1 eyeballing."""
@@ -460,12 +460,12 @@ SHOWCASE_AOIS: dict[str, AOI] = {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `docker compose exec api pytest tests/test_aois.py -v`
 Expected: 3 passed
 
-- [ ] **Step 5: Lint and commit**
+- [x] **Step 5: Lint and commit**
 
 ```bash
 docker compose exec api sh -c "ruff check --fix . && ruff format ."
