@@ -112,7 +112,7 @@ git commit -m "chore(phase-1): add imagery+db deps, dev bind mounts, data dir"
 **Interfaces:**
 - Produces: verified asset keys, EPSG property name (`proj:epsg` vs `proj:code`), href scheme; one real item JSON saved as a test fixture.
 
-- [ ] **Step 1: Run the spike in-container**
+- [x] **Step 1: Run the spike in-container**
 
 ```bash
 docker compose exec -T api python - <<'PY'
@@ -146,7 +146,7 @@ PY
 
 Expected: ≥1 item; asset keys include `red/green/blue/nir/scl`; hrefs are `https://sentinel-cogs.s3.us-west-2.amazonaws.com/...`; a `proj:` property carrying the UTM EPSG (~32643).
 
-- [ ] **Step 2: Verify a windowed read works (the whole phase hinges on this)**
+- [x] **Step 2: Verify a windowed read works (the whole phase hinges on this)**
 
 ```bash
 docker compose exec -T api python - <<'PY'
@@ -175,7 +175,7 @@ PY
 
 Expected: shape roughly (440, 550) for the seed box at 10 m; non-zero max. If this fails, STOP and diagnose before any implementation task.
 
-- [ ] **Step 3: Record findings**
+- [x] **Step 3: Record findings**
 
 Append a `## Spike Findings (2026-07-03)` section to this plan file: exact asset keys, EPSG property name and value, href host, item id used, read shape/dtype, and any surprises. Commit:
 
@@ -1869,4 +1869,14 @@ Give the user the compare URL: `https://github.com/yash2484/Overwatch/compare/ma
 
 ## Spike Findings
 
-*(Appended during execution — Task 2 records the verified API surface; Tasks 11/13 record final bboxes, scene ids, usable fractions, and eyeball notes. Empty until those steps actually run.)*
+### API surface (Task 2, run 2026-07-03 against live Earth Search v1)
+
+- Endpoint `https://earth-search.aws.element84.com/v1`, collection `sentinel-2-l2a`: works, no auth. 5 items < 20% cloud for Vizhinjam Jan–Mar 2021.
+- Spike item: `S2A_43PGK_20210304_2_L2A` (2021-03-04T05:26:32Z, cloud 10.5%). Vizhinjam sits on UTM tile **43PGK**.
+- **EPSG lives in `proj:code` = `"EPSG:32643"` (STAC proj v2). There is NO `proj:epsg` on items** — the `_epsg_from_props` fallback chain is load-bearing, not defensive.
+- **Asset keys confirmed:** `red` (B04), `green` (B03), `blue` (B02), `nir` (B08), `scl` (SCL) — plus `visual`, `nir08/09`, `swir16/22`, `rededge1-3`, `aot`, `wvp`, `coastal`, metadata assets, and `-jp2` variants of everything.
+- **Hrefs:** public HTTPS on `https://sentinel-cogs.s3.us-west-2.amazonaws.com/...` — vsicurl reads need no credentials.
+- **Windowed read verified:** seed bbox → window (col 1585, row 7148, 554×446) of a 10980×10980 raster; read shape (446, 554) uint16, min 110 / max 5464. Megabytes, not the ~1 GB scene.
+- Gotcha: numpy 2.5 raises a `DeprecationWarning` ("Setting the shape on a NumPy array") inside `rasterio.windows` — harmless noise today; will break on a future numpy. Pin-watch rasterio releases.
+
+*(Tasks 11/13 append: final bboxes, selected scene ids, usable fractions, eyeball notes.)*
