@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+
+# Env & secrets
+.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Local data artifacts (rasters land here in Phase 1)
+data/
+*.tif
+*.tiff
