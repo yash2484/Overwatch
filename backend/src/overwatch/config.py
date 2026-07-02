@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://overwatch:overwatch_dev@postgis:5432/overwatch"
     redis_url: str = "redis://redis:6379/0"
+    stac_api_url: str = "https://earth-search.aws.element84.com/v1"
     anthropic_api_key: str | None = None
     fusion_enabled: bool = True
 

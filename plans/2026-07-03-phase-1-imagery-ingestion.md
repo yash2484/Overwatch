@@ -880,7 +880,7 @@ git commit -m "feat(phase-1): percentile-stretched RGB PNG rendering (TDD)"
 - Consumes: `SceneMeta`, `AOIWindow`, `SceneCoverageError` (Task 6); spike fixture.
 - Produces: `EarthSearchProvider` (implements `ImageryProvider`); helpers `scene_meta_from_item(item: pystac.Item) -> SceneMeta`, `integer_window(bounds: tuple, transform: Affine) -> Window`, `_epsg_from_props(props: dict) -> int`; `settings.stac_api_url`.
 
-- [ ] **Step 1: Add the STAC URL to `config.py`**
+- [x] **Step 1: Add the STAC URL to `config.py`**
 
 Add one field to `Settings` (additive):
 
@@ -888,11 +888,11 @@ Add one field to `Settings` (additive):
     stac_api_url: str = "https://earth-search.aws.element84.com/v1"
 ```
 
-- [ ] **Step 2: Create the fixture from the spike output**
+- [x] **Step 2: Create the fixture from the spike output**
 
 Copy `data/spike_item.json` to `backend/tests/fixtures/earth_search_item.json`. Trim `assets` to only `red`, `green`, `blue`, `nir`, `scl`, `visual` entries (keep each entry's full dict) to keep the fixture small. Keep `properties`, `id`, `collection`, `geometry`, `bbox`, `stac_version`, `links` (links may be `[]`).
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 Adjust the EPSG assertion to the spike's real value if not 32643.
 
@@ -960,12 +960,12 @@ def test_check_coverage_rejects_out_of_bounds() -> None:
     _check_coverage(Window(0, 0, 100, 100), src)  # exact fit passes
 ```
 
-- [ ] **Step 4: Run tests to verify they fail**
+- [x] **Step 4: Run tests to verify they fail**
 
 Run: `docker compose exec api pytest tests/test_earth_search.py -v`
 Expected: FAIL — module not found
 
-- [ ] **Step 5: Implement `earth_search.py`**
+- [x] **Step 5: Implement `earth_search.py`**
 
 ```python
 """Earth Search STAC provider (design spec §4). Asset keys verified in the Phase 1 spike."""
@@ -1087,12 +1087,12 @@ class EarthSearchProvider:
         return AOIWindow(bands=out, scl=scl, transform=ref_transform, epsg=scene.epsg)
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `docker compose exec api pytest tests/test_earth_search.py -v`
 Expected: 6 passed
 
-- [ ] **Step 7: Live smoke check (manual, not CI): search + windowed read via the provider**
+- [x] **Step 7: Live smoke check (manual, not CI): search + windowed read via the provider**
 
 ```bash
 docker compose exec -T api python - <<'PY'
@@ -1112,7 +1112,7 @@ PY
 
 Expected: ≥1 scene; band and SCL shapes equal; usable fraction printed (likely > 0.9 for a clear-season scene).
 
-- [ ] **Step 8: Lint, full suite, commit**
+- [x] **Step 8: Lint, full suite, commit**
 
 ```bash
 docker compose exec api sh -c "ruff check --fix . && ruff format . && pytest -q"
