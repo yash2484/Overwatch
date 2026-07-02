@@ -768,7 +768,7 @@ git commit -m "feat(phase-1): provider protocol + usable-scene gating (TDD)"
 - Consumes: `AOIWindow` from Task 6.
 - Produces: `stretch_to_uint8(band: np.ndarray, low_pct: float = 2.0, high_pct: float = 98.0) -> np.ndarray`; `render_rgb_png(window: AOIWindow, out_path: Path) -> Path`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 from pathlib import Path
@@ -811,12 +811,12 @@ def test_render_writes_rgb_png(tmp_path: Path) -> None:
         assert img.mode == "RGB" and img.size == (8, 8)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `docker compose exec api pytest tests/test_render.py -v`
 Expected: FAIL — module not found
 
-- [ ] **Step 3: Implement `render.py`**
+- [x] **Step 3: Implement `render.py`**
 
 ```python
 """RGB PNG rendering for eyeball verification (Phase 1 gate)."""
@@ -853,12 +853,12 @@ def render_rgb_png(window: AOIWindow, out_path: Path) -> Path:
     return out_path
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `docker compose exec api pytest tests/test_render.py -v`
 Expected: 4 passed
 
-- [ ] **Step 5: Lint and commit**
+- [x] **Step 5: Lint and commit**
 
 ```bash
 docker compose exec api sh -c "ruff check --fix . && ruff format ."
