@@ -16,6 +16,7 @@ dist/
 # OS / editor
 .DS_Store
 Thumbs.db
+.serena/
 
 # Local data artifacts (rasters land here in Phase 1)
 data/
