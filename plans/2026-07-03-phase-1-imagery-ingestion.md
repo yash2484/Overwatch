@@ -196,7 +196,7 @@ git commit -m "docs(phase-1): record Earth Search spike findings"
 **Interfaces:**
 - Produces: `MASKED_SCL_CLASSES: frozenset[int]`; `usable_mask(scl: np.ndarray) -> np.ndarray` (bool, True=usable); `usable_fraction(scl: np.ndarray) -> float`; `apply_mask(band: np.ndarray, mask: np.ndarray) -> np.ndarray` (float32, NaN where unusable).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 import numpy as np
@@ -244,12 +244,12 @@ def test_apply_mask_nans_unusable_and_leaves_input_untouched() -> None:
     assert band[0, 1] == 200  # input not mutated
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `docker compose exec api pytest tests/test_masking.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'overwatch.imagery'`
 
-- [ ] **Step 3: Implement `masking.py`**
+- [x] **Step 3: Implement `masking.py`**
 
 ```python
 """SCL-based cloud masking (design spec §6).
@@ -283,12 +283,12 @@ def apply_mask(band: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return out
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `docker compose exec api pytest tests/test_masking.py -v`
 Expected: 6 passed
 
-- [ ] **Step 5: Lint and commit**
+- [x] **Step 5: Lint and commit**
 
 ```bash
 docker compose exec api sh -c "ruff check --fix . && ruff format ."
@@ -307,7 +307,7 @@ git commit -m "feat(phase-1): SCL cloud masking with usable-pixel fraction (TDD)
 **Interfaces:**
 - Produces: `candidate_windows(start: date, end: date, *, step_days: int = 15, cap_days: int = 60) -> list[tuple[date, date]]` — original window first, then end-extended windows. Widening extends the **end** forward (engineering default; noted assumption — spec says "+15-day steps capped at +60 days" without direction).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 from datetime import date
@@ -338,12 +338,12 @@ def test_end_before_start_raises() -> None:
         candidate_windows(date(2021, 2, 1), date(2021, 1, 1))
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `docker compose exec api pytest tests/test_search_windows.py -v`
 Expected: FAIL — module not found
 
-- [ ] **Step 3: Implement `search_windows.py`**
+- [x] **Step 3: Implement `search_windows.py`**
 
 ```python
 """Auto-widening scene search windows (design spec §6: +15-day steps, +60-day cap)."""
@@ -360,12 +360,12 @@ def candidate_windows(
     return [(start, end + timedelta(days=d)) for d in range(0, cap_days + 1, step_days)]
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `docker compose exec api pytest tests/test_search_windows.py -v`
 Expected: 3 passed
 
-- [ ] **Step 5: Lint and commit**
+- [x] **Step 5: Lint and commit**
 
 ```bash
 docker compose exec api sh -c "ruff check --fix . && ruff format ."
