@@ -1471,7 +1471,7 @@ git commit -m "feat(phase-1): scenes schema, engine plumbing, alembic baseline"
 - Consumes: `Scene`, `session_scope` (Task 9); `SceneMeta` (Task 6).
 - Produces: `upsert_scene(session, scene: SceneMeta, aoi_slug: str, window_geometry: Polygon, usable_fraction: float | None, meta: dict | None = None) -> int` (row id, stable across re-runs).
 
-- [ ] **Step 1: Create `tests/conftest.py` with a session-scoped migration fixture**
+- [x] **Step 1: Create `tests/conftest.py` with a session-scoped migration fixture**
 
 ```python
 from pathlib import Path
@@ -1491,7 +1491,7 @@ def migrated_db() -> None:
     command.upgrade(cfg, "head")
 ```
 
-- [ ] **Step 2: Write the failing idempotency test**
+- [x] **Step 2: Write the failing idempotency test**
 
 ```python
 import datetime as dt
@@ -1540,12 +1540,12 @@ def test_upsert_twice_yields_one_row_with_updated_fields(clean_rows) -> None:
         assert rows[0].stac_id == "S2B_43PDP_20240101_0_L2A_TEST"
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `docker compose exec api pytest tests/test_scenes_db.py -v`
 Expected: FAIL — `overwatch.db.scenes` not found
 
-- [ ] **Step 4: Implement `db/scenes.py`**
+- [x] **Step 4: Implement `db/scenes.py`**
 
 ```python
 """Scene persistence — idempotent upsert on the (stac_id, aoi_slug) natural key."""
@@ -1592,12 +1592,12 @@ def upsert_scene(
     return session.execute(stmt).scalar_one()
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `docker compose exec api pytest tests/test_scenes_db.py -v`
 Expected: 1 passed
 
-- [ ] **Step 6: Lint, full suite, commit**
+- [x] **Step 6: Lint, full suite, commit**
 
 ```bash
 docker compose exec api sh -c "ruff check --fix . && ruff format . && pytest -q"
