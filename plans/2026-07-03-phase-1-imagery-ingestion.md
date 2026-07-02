@@ -1616,7 +1616,7 @@ git commit -m "feat(phase-1): idempotent scene upsert on (stac_id, aoi_slug)"
 - Consumes: everything above.
 - Produces: `python -m overwatch.imagery.cli --aoi <slug> --start YYYY-MM-DD --end YYYY-MM-DD [--max-cloud 60] [--min-usable 0.7] [--out-dir /app/data]`. Exit 0 with a summary line on success; exit 1 with `NO USABLE SCENE ...` when the gate exhausts the widening cap.
 
-- [ ] **Step 1: Implement `cli.py`**
+- [x] **Step 1: Implement `cli.py`**
 
 ```python
 """Phase 1 ingestion CLI: search -> gate -> mask -> PNG -> persist.
@@ -1698,7 +1698,7 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 2: First live run (Vizhinjam, clear season)**
+- [x] **Step 2: First live run (Vizhinjam, clear season)**
 
 ```bash
 docker compose exec api python -m overwatch.imagery.cli --aoi vizhinjam --start 2021-01-01 --end 2021-03-31
@@ -1706,11 +1706,11 @@ docker compose exec api python -m overwatch.imagery.cli --aoi vizhinjam --start 
 
 Expected: exit 0; summary line with usable ≥ 0.7; PNG at `data/vizhinjam_<date>_<id>.png` on the host.
 
-- [ ] **Step 3: Eyeball the PNG**
+- [x] **Step 3: Eyeball the PNG**
 
 Open `data/vizhinjam_*.png` (Read tool renders it). Expect coastline + port area, sensible colours, no black stripes. Refine the AOI bbox in `aois.py` if the framing is off, re-run, and note the final bbox in Spike Findings.
 
-- [ ] **Step 4: Idempotency spot-check (live)**
+- [x] **Step 4: Idempotency spot-check (live)**
 
 ```bash
 docker compose exec api python -m overwatch.imagery.cli --aoi vizhinjam --start 2021-01-01 --end 2021-03-31
@@ -1719,7 +1719,7 @@ docker compose exec postgis psql -U overwatch -d overwatch -c "SELECT count(*), 
 
 Expected: second run selects the same scene; count stays 1.
 
-- [ ] **Step 5: Lint, full suite, commit**
+- [x] **Step 5: Lint, full suite, commit**
 
 ```bash
 docker compose exec api sh -c "ruff check --fix . && ruff format . && pytest -q"
