@@ -1139,7 +1139,7 @@ git commit -m "feat(phase-1): Earth Search provider with windowed COG reads"
 **Interfaces:**
 - Produces: `sqlalchemy_url(url: str) -> str`; `get_engine() -> Engine`; `session_scope()` context manager yielding a committed/rolled-back `Session`; ORM `Scene` (table `scenes`, unique `(stac_id, aoi_slug)` named `uq_scenes_stac_id_aoi_slug`); alembic `upgrade head` creates the table + GiST index.
 
-- [ ] **Step 1: Write the failing URL-normalization test**
+- [x] **Step 1: Write the failing URL-normalization test**
 
 ```python
 from overwatch.db.engine import sqlalchemy_url
@@ -1157,12 +1157,12 @@ def test_explicit_driver_urls_pass_through() -> None:
     assert sqlalchemy_url(url) == url
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `docker compose exec api pytest tests/test_engine.py -v`
 Expected: FAIL — module not found
 
-- [ ] **Step 3: Implement `db/engine.py`**
+- [x] **Step 3: Implement `db/engine.py`**
 
 ```python
 """SQLAlchemy engine/session plumbing. psycopg3 driver forced onto plain postgres URLs."""
@@ -1203,12 +1203,12 @@ def session_scope() -> Iterator[Session]:
         session.close()
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `docker compose exec api pytest tests/test_engine.py -v`
 Expected: 2 passed
 
-- [ ] **Step 5: Implement `db/models.py`**
+- [x] **Step 5: Implement `db/models.py`**
 
 ```python
 """ORM models. scenes = Sentinel-2 scene metadata per AOI window (design spec §4)."""
@@ -1257,7 +1257,7 @@ class Scene(Base):
 
 (`spatial_index=False` because the migration creates the GiST index explicitly — avoids GeoAlchemy2's implicit-index DDL listeners firing unpredictably under alembic.)
 
-- [ ] **Step 6: Create `backend/alembic.ini`**
+- [x] **Step 6: Create `backend/alembic.ini`**
 
 ```ini
 [alembic]
@@ -1299,7 +1299,7 @@ format = %(levelname)-5.5s [%(name)s] %(message)s
 datefmt = %H:%M:%S
 ```
 
-- [ ] **Step 7: Create `backend/alembic/env.py`**
+- [x] **Step 7: Create `backend/alembic/env.py`**
 
 ```python
 from logging.config import fileConfig
@@ -1342,7 +1342,7 @@ else:
     run_migrations_online()
 ```
 
-- [ ] **Step 8: Create `backend/alembic/script.py.mako`**
+- [x] **Step 8: Create `backend/alembic/script.py.mako`**
 
 ```mako
 """${message}
@@ -1370,7 +1370,7 @@ def downgrade() -> None:
     ${downgrades if downgrades else "pass"}
 ```
 
-- [ ] **Step 9: Create `backend/alembic/versions/0001_create_scenes.py`**
+- [x] **Step 9: Create `backend/alembic/versions/0001_create_scenes.py`**
 
 ```python
 """create scenes table
@@ -1424,7 +1424,7 @@ def downgrade() -> None:
     op.drop_table("scenes")
 ```
 
-- [ ] **Step 10: Ship alembic in the image + mount it for dev**
+- [x] **Step 10: Ship alembic in the image + mount it for dev**
 
 `backend/Dockerfile` — after `COPY tests ./tests` add:
 
@@ -1439,7 +1439,7 @@ COPY alembic ./alembic
       - ./backend/alembic:/app/alembic
 ```
 
-- [ ] **Step 11: Rebuild, migrate, verify schema**
+- [x] **Step 11: Rebuild, migrate, verify schema**
 
 ```bash
 docker compose up -d --build api
@@ -1450,7 +1450,7 @@ docker compose exec postgis psql -U overwatch -d overwatch -c "SELECT indexname 
 
 Expected: table with all 11 columns, `window_geom` as `geometry(Polygon,4326)`; indexes include `uq_scenes_stac_id_aoi_slug` and `ix_scenes_window_geom` (gist). Exactly one gist index — if a second `idx_scenes_window_geom` appears, the GeoAlchemy2 listener fired despite `spatial_index=False`; drop the explicit `op.execute` index line instead and re-verify from a clean DB.
 
-- [ ] **Step 12: Lint, full suite, commit**
+- [x] **Step 12: Lint, full suite, commit**
 
 ```bash
 docker compose exec api sh -c "ruff check --fix . && ruff format . && pytest -q"

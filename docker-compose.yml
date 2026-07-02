@@ -35,6 +35,7 @@ services:
     volumes:
       - ./backend/src:/app/src
       - ./backend/tests:/app/tests
+      - ./backend/alembic:/app/alembic
       - ./data:/app/data
     depends_on:
       postgis:
