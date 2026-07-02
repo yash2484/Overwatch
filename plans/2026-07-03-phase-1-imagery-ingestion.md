@@ -491,7 +491,7 @@ git commit -m "feat(phase-1): showcase AOI seed boxes (TDD)"
   - `SceneCoverageError(Exception)`.
   - `find_usable_scene(provider, geometry, start, end, *, max_cloud_pct=60.0, min_usable=0.7, bands=("red","green","blue")) -> SceneSelection | None`; `SceneSelection` dataclass: `scene`, `window`, `usable_fraction`.
 
-- [ ] **Step 1: Write `models.py`**
+- [x] **Step 1: Write `models.py`**
 
 ```python
 """Typed imagery interfaces (design spec §4)."""
@@ -525,7 +525,7 @@ class AOIWindow:
     epsg: int
 ```
 
-- [ ] **Step 2: Write `provider.py`**
+- [x] **Step 2: Write `provider.py`**
 
 ```python
 """ImageryProvider protocol — Earth Search today, swappable later (design spec §4)."""
@@ -557,7 +557,7 @@ class ImageryProvider(Protocol):
         ...
 ```
 
-- [ ] **Step 3: Write the failing gating tests**
+- [x] **Step 3: Write the failing gating tests**
 
 ```python
 import logging
@@ -667,12 +667,12 @@ def test_partial_coverage_scene_is_skipped() -> None:
     assert sel is not None and sel.scene.stac_id == "full"
 ```
 
-- [ ] **Step 4: Run tests to verify they fail**
+- [x] **Step 4: Run tests to verify they fail**
 
 Run: `docker compose exec api pytest tests/test_gating.py -v`
 Expected: FAIL — `overwatch.imagery.gating` not found
 
-- [ ] **Step 5: Implement `gating.py`**
+- [x] **Step 5: Implement `gating.py`**
 
 ```python
 """Usable-scene selection: SCL cloud gate + auto-widened search (design spec §6)."""
@@ -743,12 +743,12 @@ def find_usable_scene(
     return None
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `docker compose exec api pytest tests/test_gating.py -v`
 Expected: 5 passed
 
-- [ ] **Step 7: Lint, full suite, commit**
+- [x] **Step 7: Lint, full suite, commit**
 
 ```bash
 docker compose exec api sh -c "ruff check --fix . && ruff format . && pytest -q"
