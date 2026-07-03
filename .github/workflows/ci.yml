@@ -2,8 +2,7 @@ name: CI
 
 on:
   push:
-    # phase-1 branch is a temporary trigger for pre-merge verification; remove after green
-    branches: [main, phase-1-imagery-ingestion]
+    branches: [main]
   pull_request:
 
 jobs:

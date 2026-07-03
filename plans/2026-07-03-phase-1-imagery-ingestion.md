@@ -1737,7 +1737,7 @@ git commit -m "feat(phase-1): ingestion CLI wiring search, gate, PNG, persistenc
 **Interfaces:**
 - Produces: green CI including `test_scenes_db.py` against a postgis service container.
 
-- [ ] **Step 1: Add the service + env to the backend job**
+- [x] **Step 1: Add the service + env to the backend job**
 
 The backend job becomes:
 
@@ -1776,7 +1776,7 @@ The backend job becomes:
         run: pytest -v
 ```
 
-- [ ] **Step 2: Commit and push the branch**
+- [x] **Step 2: Commit and push the branch**
 
 ```bash
 git add .github/workflows/ci.yml
@@ -1784,7 +1784,7 @@ git commit -m "ci(phase-1): postgis service for scene persistence tests"
 git push -u origin phase-1-imagery-ingestion
 ```
 
-- [ ] **Step 3: Verify CI green (Actions API, read-only)**
+- [x] **Step 3: Verify CI green (Actions API, read-only)**
 
 Wait ~3 min, then check the latest run for the branch via the Actions API using the stored git credential (never print the token). Expected: `conclusion: success` for both jobs. If red: read the failing step's log, fix, push, re-check.
 
@@ -1796,7 +1796,7 @@ Wait ~3 min, then check the latest run for the branch via the Actions API using 
 - Modify: `plans/2026-07-03-phase-1-imagery-ingestion.md` (record results in Spike Findings appendix)
 - Modify: `PROGRESS.md`
 
-- [ ] **Step 1: Vizhinjam construction pair (the eyeball gate)**
+- [x] **Step 1: Vizhinjam construction pair (the eyeball gate)**
 
 ```bash
 docker compose exec api python -m overwatch.imagery.cli --aoi vizhinjam --start 2021-01-01 --end 2021-03-31
@@ -1805,7 +1805,7 @@ docker compose exec api python -m overwatch.imagery.cli --aoi vizhinjam --start 
 
 Eyeball both PNGs side by side: the 2025 image must show the completed breakwater/terminal absent or partial in 2021. This is the phase's core gate.
 
-- [ ] **Step 2: Negative test — monsoon window demonstrably skips cloudy scenes**
+- [x] **Step 2: Negative test — monsoon window demonstrably skips cloudy scenes**
 
 ```bash
 docker compose exec api python -m overwatch.imagery.cli --aoi vizhinjam --start 2021-06-15 --end 2021-07-15 --max-cloud 100
@@ -1813,7 +1813,7 @@ docker compose exec api python -m overwatch.imagery.cli --aoi vizhinjam --start 
 
 Expected evidence (either satisfies the gate): log lines `skipping <id>: usable=0.xxx < 0.700` proving the SCL gate rejected real cloudy scenes and the window widened; final outcome may be exit 1 (`NO USABLE SCENE`) or a late clear scene — capture the log either way.
 
-- [ ] **Step 3: Novo Progresso viability (dry-season pair, consecutive years)**
+- [x] **Step 3: Novo Progresso viability (dry-season pair, consecutive years)**
 
 ```bash
 docker compose exec api python -m overwatch.imagery.cli --aoi novo-progresso --start 2023-06-15 --end 2023-08-15
@@ -1822,7 +1822,7 @@ docker compose exec api python -m overwatch.imagery.cli --aoi novo-progresso --s
 
 Eyeball: forest matrix with clearings; year-2 shows more/larger clearings.
 
-- [ ] **Step 4: Porto Alegre viability (pre-flood vs inundation)**
+- [x] **Step 4: Porto Alegre viability (pre-flood vs inundation)**
 
 ```bash
 docker compose exec api python -m overwatch.imagery.cli --aoi porto-alegre --start 2024-04-01 --end 2024-04-30 --max-cloud 80
@@ -1831,7 +1831,7 @@ docker compose exec api python -m overwatch.imagery.cli --aoi porto-alegre --sta
 
 Eyeball: May image shows visibly expanded water vs April. Storm-season cloud may force the widen path — that is fine as long as a usable May-era scene lands. If no usable flood-window scene exists, record it and flag the Valencia DANA fallback (design spec §5) for a user decision — do not swap unilaterally.
 
-- [ ] **Step 5: Confirm persisted rows for all three AOIs**
+- [x] **Step 5: Confirm persisted rows for all three AOIs**
 
 ```bash
 docker compose exec postgis psql -U overwatch -d overwatch -c "SELECT aoi_slug, stac_id, captured_at::date, round(cloud_pct::numeric,1) AS cloud, round(usable_fraction::numeric,3) AS usable FROM scenes ORDER BY aoi_slug, captured_at"
@@ -1839,11 +1839,11 @@ docker compose exec postgis psql -U overwatch -d overwatch -c "SELECT aoi_slug, 
 
 Expected: ≥2 rows for vizhinjam, ≥2 for novo-progresso, up to 2 for porto-alegre; no duplicates.
 
-- [ ] **Step 6: Record results + update PROGRESS.md**
+- [x] **Step 6: Record results + update PROGRESS.md**
 
 Append run results (scene ids, usable fractions, final bboxes, eyeball notes) to this plan's Spike Findings appendix. Update `PROGRESS.md`: move Phase 1 into **Built & verified** with the verification evidence, set **Next up** to Phase 2, note any deviations.
 
-- [ ] **Step 7: Final gate — verification-before-completion**
+- [x] **Step 7: Final gate — verification-before-completion**
 
 Run the full suite + lint one last time; confirm CI green on the branch; then:
 
@@ -1859,11 +1859,11 @@ Give the user the compare URL: `https://github.com/yash2484/Overwatch/compare/ma
 
 ## Verification Gate (roadmap, verbatim — every item needs recorded evidence before "done")
 
-- [ ] Two clear Vizhinjam scenes spanning known construction rendered as PNGs and eyeballed (Task 13, Step 1).
-- [ ] Usable-pixel gate demonstrably skips a cloudy scene — negative test (Task 13, Step 2).
-- [ ] Scene rows idempotent on re-run (Task 10 CI test + Task 11 Step 4 live check).
-- [ ] Viability confirmed (or fallback flagged for user decision) for all three AOIs (Task 13, Steps 3–5).
-- [ ] CI green on the branch.
+- [x] Two clear Vizhinjam scenes spanning known construction rendered as PNGs and eyeballed — `S2A_43PGK_20210212_2_L2A` (2021-02-12, usable 99.9%) vs `S2C_43PGK_20250211_0_L2A` (2025-02-11, usable 98.3%): 2021 shows the bare breakwater stub and no terminal; 2025 shows the completed curved breakwater, full container-terminal yard, and a berthed vessel.
+- [x] Usable-pixel gate demonstrably skips a cloudy scene — window 2021-06-19..07-14 (`--max-cloud 100`): 9 scenes skipped with logged `usable=0.000–0.002 < 0.700` (scene metadata claimed as low as 67% cloud while the AOI window was fully clouded), window widened +15d, selected `S2B_43PGK_20210717_1_L2A` at usable 0.925.
+- [x] Scene rows idempotent on re-run — CI integration test (upsert twice → 1 row, updated field) + live CLI re-run kept vizhinjam count=1, same row id.
+- [x] Viability confirmed for all three AOIs, no fallback needed — 8 rows persisted, no duplicates: novo-progresso 2023-07-30/2024-07-24 both usable 1.000 (clearings visibly expanded in 2024); porto-alegre 2024-04-18 (pre-flood) vs 2024-05-21 (delta islands submerged, floodwater against the city grid) both usable 1.000; vizhinjam pair above.
+- [x] CI green on the branch — run 28644701633 on `ab6231c`, conclusion `success`, including the DB test against the CI postgis service. (Final docs commit re-verified by the PR's `pull_request` CI run.)
 
 ---
 
@@ -1879,4 +1879,12 @@ Give the user the compare URL: `https://github.com/yash2484/Overwatch/compare/ma
 - **Windowed read verified:** seed bbox → window (col 1585, row 7148, 554×446) of a 10980×10980 raster; read shape (446, 554) uint16, min 110 / max 5464. Megabytes, not the ~1 GB scene.
 - Gotcha: numpy 2.5 raises a `DeprecationWarning` ("Setting the shape on a NumPy array") inside `rasterio.windows` — harmless noise today; will break on a future numpy. Pin-watch rasterio releases.
 
-*(Tasks 11/13 append: final bboxes, selected scene ids, usable fractions, eyeball notes.)*
+### Verification battery results (Tasks 11/13, run 2026-07-03)
+
+- **Final bboxes: all three seeds kept unchanged** — framing verified by eyeball on rendered PNGs (`data/*.png`).
+- **Vizhinjam pair:** 2021-02-12 `S2A_43PGK_20210212_2_L2A` (cloud 0.0%, usable 0.999) vs 2025-02-11 `S2C_43PGK_20250211_0_L2A` (cloud 1.9%, usable 0.983). Construction change unmistakable: breakwater stub → completed breakwater + terminal yard + berthed vessel.
+- **Negative test:** first attempt (2021-06-15..07-15) selected `S2B_43PGK_20210617_0_L2A` at usable 0.734 — a genuine monsoon-break scene cleared the gate honestly, no skips. Second window (2021-06-19..07-14, only 67–93% cloud scenes) produced the skip evidence: 9 skips at usable 0.000–0.002, widen, select `S2B_43PGK_20210717_1_L2A` (0.925). Lesson: scene-level `eo:cloud_cover` lies in both directions over a small AOI window; the SCL gate is the real arbiter.
+- **Novo Progresso pair:** 2023-07-30 `S2B_21MXN_20230730_0_L2A` and 2024-07-24 `S2B_21MXN_20240724_0_L2A`, both cloud 0.0%, usable 1.000. BR-163 fishbone clearings visible; several parcels visibly expanded in 2024. Tile 21MXN.
+- **Porto Alegre pair:** 2024-04-18 `S2A_22JDM_20240418_0_L2A` (pre-flood) vs 2024-05-21 `S2A_22JDM_20240521_0_L2A` (flood), both usable 1.000. May scene: delta islands submerged, Guaíba floodwater pressed against the city grid. Tile 22JDM. The weeks-long inundation made clear post-event scenes findable exactly as the design predicted.
+- **Persistence:** 8 rows, no duplicates (4 vizhinjam incl. the two monsoon scenes ingested by negative-test runs; 2 novo-progresso; 2 porto-alegre). Live idempotency re-run: count stayed 1 for the vizhinjam demo scene, same row id.
+- **CI:** run 28644701633 (`ab6231c`) success with the postgis service; branch trigger was temporary and is removed in the phase's final commit — the PR run re-verifies the head.
