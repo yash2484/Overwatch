@@ -32,6 +32,11 @@ services:
       OVERWATCH_REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/tests:/app/tests
+      - ./backend/alembic:/app/alembic
+      - ./data:/app/data
     depends_on:
       postgis:
         condition: service_healthy
