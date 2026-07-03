@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # phase-1 branch is a temporary trigger for pre-merge verification; remove after green
+    branches: [main, phase-1-imagery-ingestion]
   pull_request:
 
 jobs:
@@ -11,6 +12,22 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgis:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: overwatch
+          POSTGRES_PASSWORD: overwatch_dev
+          POSTGRES_DB: overwatch
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U overwatch -d overwatch"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      OVERWATCH_DATABASE_URL: postgresql://overwatch:overwatch_dev@localhost:5432/overwatch
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
