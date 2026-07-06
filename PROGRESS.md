@@ -3,10 +3,10 @@
 > Living session-state file. Convention: nothing is "done" until it's in **Built & verified** with a note on *how* it was verified.
 
 ## Current phase
-Phase 1 — Imagery ingestion: **complete and verified** on branch `phase-1-imagery-ingestion`, awaiting user merge via GitHub PR (compare: https://github.com/yash2484/Overwatch/compare/main...phase-1-imagery-ingestion). Next: Phase 2 — Change Detection Engine (fresh session, write plan first per `plans/2026-07-03-mvp-roadmap.md`).
+Phase 2 — Change Detection Engine: **complete and verified** on branch `phase-2-change-detection`, awaiting user merge via GitHub PR (compare: https://github.com/yash2484/Overwatch/compare/main...phase-2-change-detection). Next: Phase 3 — Detection persistence + API + jobs (fresh session, write plan first per `plans/2026-07-03-mvp-roadmap.md`).
 
 ## Last verified working
-Phase 1 pipeline end-to-end (2026-07-03, in-container): STAC search → SCL gate → windowed COG read → PNG → PostGIS upsert for all three showcase AOIs; 32 tests + lint green locally and in CI (run 28644701633 with postgis service). Stack: 6 services up after fresh `up -d --build`.
+Phase 2 change-detection engine end-to-end (2026-07-07, in-container): synthetic-injected-change TDD suite (inject known rect → assert polygon IoU/type/magnitude) plus real-pair CLI runs — Vizhinjam port pair 2021-02-12 vs 2025-02-11 → 9 construction polygons on the new terminal/breakwater; Novo Progresso forest pair 2023-07-20 vs 2024-07-24 → 103 vegetation-loss polygons on BR-163 clearings. 72 tests + ruff check + ruff format all green in-container. BOA-offset harmonization verified live on the mixed-baseline Vizhinjam pair (2025 scene offset −1000).
 
 ## Built & verified
 - [x] Brainstorm: all PROJECT.md `[BRAINSTORM]` tags resolved with user (fusion IN constrained; Vizhinjam / Novo Progresso / Porto Alegre AOIs; Earth Search; polling; no alerting; engineering defaults). *Verified: user approved design in-session 2026-07-02; PROJECT.md updated, grep confirms no unresolved tags.*
@@ -29,17 +29,25 @@ Phase 1 pipeline end-to-end (2026-07-03, in-container): STAC search → SCL gate
   4. Eyeball gate: Vizhinjam 2021-02-12 vs 2025-02-11 PNGs show breakwater stub → completed port with terminal + berthed vessel.
   5. Three-AOI viability confirmed, no fallbacks: Novo Progresso 2023/2024 dry-season pair (usable 1.000, clearings visibly expanded), Porto Alegre 2024-04-18 vs 2024-05-21 (usable 1.000, delta submerged). 8 scene rows, no duplicates.
   6. 32 tests + ruff green in-container and in CI (postgis service added to backend job).
+- [x] Phase 2 plan: `plans/2026-07-06-phase-2-change-detection.md` (11 tasks, all executed; Verification Gate evidence appended).
+- [x] **Phase 2 — Change Detection Engine (TDD).** *Verified 2026-07-07, all in-container; evidence in the plan's Verification Gate section:*
+  1. Pure `overwatch.detection` package: `indices` (ndvi/ndwi/nbr, NaN-aware), `differencing` (index deltas + SSIM dissimilarity), `presets` (per-vertical pydantic configs — spec min-areas 1,500/5,000/10,000 m², thresholds never hardcoded), `postprocess` (AND-ed threshold rules ∩ usable mask → open→close morphology), `polygonize` (connected regions → typed `Detection` polygons with area/magnitude/confidence/contributing-indices), `detector` (`ChangeDetector` protocol + `ClassicalChangeDetector` composition; raises on shape/CRS/transform mismatch). No I/O, no LLM.
+  2. Synthetic-injected-change TDD backbone (`tests/synthetic.py`): before/after `AOIWindow` pairs with a known rect; headline suite asserts polygon IoU > 0.5, change type, magnitude, confidence, and the negative cases (no-change, sub-min-area, under-cloud, mismatched-shape).
+  3. Sentinel-2 BOA-offset harmonization: `SceneMeta.dn_offset` + `boa_dn_offset(props)` (−1000 for baseline ≥ 04.00 DNs still carrying the offset). Verified live on the mixed-baseline Vizhinjam pair (2021 = 0, 2025 = −1000).
+  4. Eyeball gate: Vizhinjam 2021→2025 → 9 construction polygons tracing the completed terminal/reclaimed backyard/breakwater (largest 17,900 m²); Novo Progresso 2023→2024 → 103 vegetation-loss polygons on the BR-163 clearings. Overlay PNGs in `data/` (gitignored).
+  5. 72 tests + `ruff check` + `ruff format --check` green in-container (40 new Phase-2 tests; no preset tuning needed — spec defaults held).
 
 ## In progress
-- Nothing (Phase 1 branch awaiting user merge).
+- Nothing (Phase 2 branch awaiting user merge).
 
 ## Next up
-- User: open/merge the Phase 1 PR (CI re-runs on the PR via `pull_request` trigger; verify green before merging).
-- Phase 2 (fresh session): Change Detection Engine (TDD) — the pure deterministic core. Write the plan with `superpowers:writing-plans` per the roadmap; synthetic-raster fixtures first, then the real Vizhinjam pair from Phase 1 (`scenes` rows + `data/*.png` document the pair: 2021-02-12 vs 2025-02-11).
+- User: open/merge the Phase 2 PR (CI re-runs on the PR via `pull_request` trigger; verify green before merging).
+- User: the Phase 1 PR (`phase-1-imagery-ingestion`) may still be open — merge order is Phase 1 then Phase 2, or rebase Phase 2 if Phase 1 lands first.
+- Phase 3 (fresh session): Detection persistence + API + jobs. Write the plan with `superpowers:writing-plans` per the roadmap; persist `Detection` polygons to PostGIS, expose via FastAPI, wire the Celery job that runs the detector on ingested scene pairs.
 
 ## Open decisions
 - Exact GDELT endpoint/theme identifiers — deferred to the Phase 5 API spike (deliberate).
-- Morphology kernel sizes and threshold tuning — Phase 2, empirical.
+- Preset thresholds/morphology are **engineering defaults, not tuned numbers** (design-spec §6 verbatim): port ssim_dissim≥0.35 ∧ ndvi≤−0.10, forest ndvi≤−0.20, flood ndwi≥0.20; min-areas 1,500/5,000/10,000 m²; open→close kernel 3px. They held on synthetic + real Vizhinjam/Novo pairs without tuning; revisit empirically if Phase 3+ real-data review demands it.
 
 ## Known issues / deviations
 - `python:3.12-slim` needs `libexpat1` via apt for rasterio's bundled GDAL — handled in `backend/Dockerfile`, plan updated to match.
@@ -48,3 +56,6 @@ Phase 1 pipeline end-to-end (2026-07-03, in-container): STAC search → SCL gate
 - 2026-07-03: accidental "revert PR" on GitHub was closed unmerged; leftover `revert-1-phase-0-scaffold` branch deleted from origin. Main history is clean.
 - numpy 2.5 `DeprecationWarning` surfaces via `rasterio.windows` (harmless; will break on a future numpy — watch rasterio releases). rasterio also logs "boto3 not available, DummySession" INFO noise on HTTPS reads (cosmetic).
 - Negative-test runs ingested two real monsoon scenes for vizhinjam (2021-06-17 usable 0.734, 2021-07-17 usable 0.925) alongside the demo pair — legitimate rows, kept.
+- Phase 2: synthetic fixtures import as `from tests.synthetic import …` (tests/ is a package with `__init__.py`) — the plan's `from synthetic import …` snippets are wrong; use the package-qualified path.
+- Phase 2: forest NDVI-decrease rule cannot distinguish deforestation from crop harvest (both drop NDVI). Dry-season pairing minimizes it; a "was-forest-before" precondition is a Phase 3+ option if false positives on cropland matter.
+- Phase 2: NBR index function is implemented + tested but unused by any preset (needs a `swir22` band the CLI doesn't read) — kept for future presets per the roadmap.

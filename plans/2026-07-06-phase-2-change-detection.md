@@ -1463,3 +1463,49 @@ Give the user the compare URL: `https://github.com/yash2484/Overwatch/compare/ma
 - **Spec coverage:** NDVI/NDWI/NBR deltas (T2/T4/T8), image differencing + SSIM (T4), threshold → open→close morphology (T6), polygonization into typed Detections with geometry/change type/magnitude/confidence/contributing indices (T5/T7), per-vertical presets with spec min-areas (T5), synthetic-first then real Vizhinjam pair (T3/T8/T10), thresholds in presets not hardcoded (T5, enforced by T10 tuning protocol). NBR is implemented and tested but no preset uses it — kept because the roadmap names it and Phase-2+ presets may adopt it; it needs a `swir22` band the CLI doesn't read (YAGNI on the read, not on the pure function).
 - **Known limitations (documented, accepted):** SSIM cloud-edge halo (T8 note); SSIM map computed per-preset band (`ssim_band="red"`); `unary_union` assumes 4-connectivity consistency between `ndimage.label` and `features.shapes` (both default to 4-connectivity).
 - **Type consistency check:** `rule.map` names match `_change_maps` keys and `MapName` literal; `Detection` fields match between T5 definition and T7 constructor; `rect_geometry` bounds match `TRANSFORM_10M` math (500_000 + col·10, 1_000_000 − row·10).
+
+---
+
+## Verification Gate (2026-07-07, all in-container)
+
+**Suite + lint** (`docker compose exec api pytest -q && ruff check . && ruff format --check .`):
+- **72 passed**, 2 warnings (pre-existing: FastAPI/httpx StarletteDeprecation; alembic `path_separator`). Both are inherited from Phase 1, not introduced here.
+- `ruff check .` → **All checks passed!**
+- `ruff format --check .` → **53 files already formatted.**
+- Phase-2 test breakdown (40 new; 32 Phase-1 baseline → 72): indices 6, synthetic 5, differencing 4, presets 5, postprocess 5, polygonize 5, detector 7, overlay 1, earth_search +2 (6 → 8).
+
+**Preset tuning:** none. The design-spec §6 verbatim defaults held on both synthetic and real data — `port` ssim_dissim≥0.35 ∧ ndvi≤−0.10, `forest` ndvi≤−0.20, `flood` ndwi≥0.20; min-areas 1,500 / 5,000 / 10,000 m². `test_port_construction_detected` passed at ssim 0.35 without the fallback tuning the plan anticipated. The presets remain tunable engineering defaults, **not** empirically optimized numbers.
+
+**Real-pair CLI runs** (network reads, in-container):
+
+Vizhinjam (port) — `--before 2021-02-12 --after 2025-02-11`:
+```
+before=S2A_43PGK_20210212_0_L2A (baseline offset 0) after=S2C_43PGK_20250211_0_L2A (baseline offset -1000)
+type=construction area_m2=17900 magnitude=0.801 confidence=1.00 centroid=(720795, 925283)
+type=construction area_m2=5200  magnitude=0.842 confidence=1.00 centroid=(721032, 925717)
+type=construction area_m2=3300  magnitude=0.575 confidence=1.00 centroid=(717813, 927474)
+type=construction area_m2=3200  magnitude=1.092 confidence=1.00 centroid=(720298, 926068)
+type=construction area_m2=2800  magnitude=0.658 confidence=1.00 centroid=(720184, 926122)
+type=construction area_m2=2100  magnitude=0.604 confidence=1.00 centroid=(718801, 926761)
+type=construction area_m2=1900  magnitude=1.074 confidence=1.00 centroid=(720376, 925979)
+type=construction area_m2=1500  magnitude=0.687 confidence=1.00 centroid=(717685, 927525)
+type=construction area_m2=1500  magnitude=1.003 confidence=1.00 centroid=(720969, 925041)
+detections=9 png=/app/data/vizhinjam_2021-02-12_2025-02-11_detections.png
+```
+**BOA offset recorded:** 2021 scene = 0, 2025 scene = **−1000** — the mixed-baseline pair Task 9 exists to harmonize (uncorrected, every index delta would carry a systematic +1000 DN component). Novo pair below is 0/0, so the harmonization is a no-op there; Vizhinjam is where it bites.
+
+**Eyeball verdict (PASS):** red outlines cluster on the completed terminal + reclaimed backyard (the block-grid hardstanding) in the SE of the window; the breakwater arcs SW into the sea. Open ocean is clean; the town is nearly clean; a few small polygons on the NW coastline are the expected surf-zone noise (the AND-ed NDVI rule suppresses most of it). Largest polygons (17,900 / 5,200 m²) sit on the new port works.
+
+Novo Progresso (forest) — `--before 2023-07-19 --after 2024-07-23`:
+```
+before=S2B_21MXN_20230720_0_L2A (baseline offset 0) after=S2B_21MXN_20240724_0_L2A (baseline offset 0)
+detections=103   png=/app/data/novo-progresso_2023-07-19_2024-07-23_detections.png
+(largest polygons 5,000–7,000 m², magnitude 0.21–0.42, confidence 0.90–1.00)
+```
+(The day..day+1 search window selected 2023-07-20 / 2024-07-24 — the nearest scenes to the requested dates.)
+
+**Eyeball verdict (PASS):** outlines trace forest→clearing transitions along BR-163 — dark-green standing forest (2023) → tan/pink bare soil & pasture (2024). Standing forest blocks and open water are untouched. **Documented limitation:** a handful of polygons land on already-agricultural fields, where NDVI dropped from crop harvest between the two July dates — an intrinsic ambiguity of a pure NDVI-decrease rule (harvest and deforestation both drop NDVI). The dry-season pairing minimizes it; Phase 3+ can add a "was-forest-before" precondition if needed.
+
+**Known deviations from the plan text:**
+- Synthetic fixtures are imported as `from tests.synthetic import …` (not `from synthetic import …` as the plan snippets show) — `backend/tests/` is a package (`__init__.py` present), so the package-qualified path is the working import. Applied to `test_polygonize.py`, `test_detector.py`, `test_overlay.py`.
+- `cli.py` / `overlay.py` were `ruff format`-adjusted after transcription (long `def` signatures collapsed to one line); committed as a follow-up `style(phase-2)` commit.
