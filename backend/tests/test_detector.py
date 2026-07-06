@@ -1,6 +1,5 @@
 """End-to-end engine tests on synthetic pairs: inject a known change, assert the polygon."""
 
-import numpy as np
 import pytest
 from shapely.geometry import Polygon
 

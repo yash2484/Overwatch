@@ -23,9 +23,7 @@ from overwatch.imagery.models import AOIWindow, SceneMeta
 BANDS = ("red", "green", "blue", "nir")
 
 
-def _load_window(
-    provider: EarthSearchProvider, aoi: AOI, day: date
-) -> tuple[SceneMeta, AOIWindow]:
+def _load_window(provider: EarthSearchProvider, aoi: AOI, day: date) -> tuple[SceneMeta, AOIWindow]:
     scenes = provider.search_scenes(
         aoi.geometry(), day, day + timedelta(days=1), max_cloud_pct=100.0
     )

@@ -12,9 +12,7 @@ from overwatch.imagery.render import stretch_to_uint8
 _OUTLINE = (255, 40, 40)
 
 
-def render_detections_png(
-    window: AOIWindow, detections: list[Detection], out_path: Path
-) -> Path:
+def render_detections_png(window: AOIWindow, detections: list[Detection], out_path: Path) -> Path:
     """True-colour after-image with detection boundaries outlined in red."""
     rgb = np.dstack(
         [stretch_to_uint8(window.bands[b].astype(np.float32)) for b in ("red", "green", "blue")]
