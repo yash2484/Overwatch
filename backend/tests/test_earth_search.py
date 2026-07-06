@@ -10,6 +10,7 @@ from rasterio.windows import Window
 from overwatch.imagery.earth_search import (
     _check_coverage,
     _epsg_from_props,
+    boa_dn_offset,
     integer_window,
     scene_meta_from_item,
 )
@@ -59,3 +60,29 @@ def test_check_coverage_rejects_out_of_bounds() -> None:
     with pytest.raises(SceneCoverageError):
         _check_coverage(Window(60, 60, 50, 50), src)
     _check_coverage(Window(0, 0, 100, 100), src)  # exact fit passes
+
+
+def test_boa_dn_offset_rules() -> None:
+    # pre-04 baseline: no offset in the data
+    assert boa_dn_offset({"s2:processing_baseline": "03.01"}) == 0
+    # post-04 baseline, offset already removed by Earth Search reprocessing
+    assert (
+        boa_dn_offset({"s2:processing_baseline": "05.11", "earthsearch:boa_offset_applied": True})
+        == 0
+    )
+    # post-04 baseline, offset still in the DNs -> subtract 1000
+    assert (
+        boa_dn_offset({"s2:processing_baseline": "05.11", "earthsearch:boa_offset_applied": False})
+        == -1000
+    )
+    # missing metadata: assume no offset, log-worthy but non-fatal
+    assert boa_dn_offset({}) == 0
+
+
+def test_scene_meta_carries_dn_offset() -> None:
+    item = _item()
+    item.properties["s2:processing_baseline"] = "05.11"
+    item.properties["earthsearch:boa_offset_applied"] = False
+    assert scene_meta_from_item(item).dn_offset == -1000
+    item.properties["earthsearch:boa_offset_applied"] = True
+    assert scene_meta_from_item(item).dn_offset == 0

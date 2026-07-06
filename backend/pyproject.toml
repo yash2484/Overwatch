@@ -20,6 +20,8 @@ dependencies = [
     "geoalchemy2>=0.16",
     "psycopg[binary]>=3.2",
     "alembic>=1.14",
+    "scipy>=1.14",
+    "scikit-image>=0.24",
 ]
 
 [project.optional-dependencies]
