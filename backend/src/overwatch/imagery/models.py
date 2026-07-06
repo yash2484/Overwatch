@@ -17,6 +17,7 @@ class SceneMeta(BaseModel):
     cloud_pct: float
     epsg: int
     assets: dict[str, str]  # asset key -> href, only the bands we may read
+    dn_offset: int = 0  # add to DNs before index math (baseline >= 04.00 BOA offset)
 
 
 @dataclass

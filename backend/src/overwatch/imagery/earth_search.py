@@ -39,6 +39,21 @@ def _epsg_from_props(props: dict) -> int:
     raise ValueError(f"item lacks proj:epsg/proj:code: {sorted(props)}")
 
 
+def boa_dn_offset(props: dict) -> int:
+    """-1000 when baseline >= 04.00 DNs still carry the BOA offset, else 0.
+
+    Earth Search sets earthsearch:boa_offset_applied=True when its reprocessing
+    already removed the offset; pre-04 baselines never had one.
+    """
+    try:
+        baseline = float(props.get("s2:processing_baseline", "0"))
+    except ValueError:
+        baseline = 0.0
+    if baseline >= 4.0 and not props.get("earthsearch:boa_offset_applied", False):
+        return -1000
+    return 0
+
+
 def scene_meta_from_item(item: pystac.Item) -> SceneMeta:
     if item.datetime is None:
         raise ValueError(f"item {item.id} lacks a datetime")
@@ -49,6 +64,7 @@ def scene_meta_from_item(item: pystac.Item) -> SceneMeta:
         cloud_pct=float(item.properties["eo:cloud_cover"]),
         epsg=_epsg_from_props(item.properties),
         assets={k: item.assets[k].href for k in _KEEP_ASSETS if k in item.assets},
+        dn_offset=boa_dn_offset(item.properties),
     )
 
 
