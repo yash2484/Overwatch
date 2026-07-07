@@ -10,6 +10,7 @@ from overwatch.imagery.models import AOIWindow
 from tests.synthetic import (
     BARE,
     BUILT,
+    CROP,
     FOREST,
     SCL_CLOUD_HIGH,
     WATER,
@@ -65,6 +66,22 @@ def test_no_change_yields_no_detections() -> None:
     after = flat_window(FOREST, seed=2)
     for preset in VERTICAL_PRESETS.values():
         assert DETECTOR.detect(before, after, preset) == []
+
+
+def test_crop_harvest_is_not_flagged_as_deforestation() -> None:
+    # Harvesting a green (but non-forest) crop drops NDVI enough to trip the bare
+    # decrease rule, but the was-forest precondition rejects it: the *before* image
+    # was cropland (NDVI ~0.4), never forest (>0.6).
+    before, after = _pair(CROP, BARE)
+    assert DETECTOR.detect(before, after, VERTICAL_PRESETS["forest"]) == []
+
+
+def test_real_forest_clearing_still_detected_with_precondition() -> None:
+    # Regression guard: the precondition must not suppress genuine forest loss.
+    before, after = _pair(FOREST, BARE)
+    [det] = DETECTOR.detect(before, after, VERTICAL_PRESETS["forest"])
+    assert det.change_type is ChangeType.VEGETATION_LOSS
+    assert _iou(det.geometry, rect_geometry(RECT)) > 0.5
 
 
 def test_sub_min_area_change_is_dropped() -> None:

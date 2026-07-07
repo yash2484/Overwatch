@@ -5,6 +5,7 @@ import numpy as np
 from overwatch.detection.indices import ndvi, ndwi
 from tests.synthetic import (
     BARE,
+    CROP,
     FOREST,
     SCL_CLOUD_HIGH,
     WATER,
@@ -22,6 +23,13 @@ def test_profiles_have_expected_index_signatures() -> None:
     assert np.nanmean(ndvi(bare.bands)) < 0.2
     assert np.nanmean(ndwi(water.bands)) > 0.4
     assert np.nanmean(ndwi(bare.bands)) < 0.0
+
+
+def test_crop_sits_between_bare_and_forest_ndvi() -> None:
+    # The was-forest precondition relies on crop NDVI landing below the forest floor (0.6)
+    # while staying well above bare soil — this is what lets it separate harvest from clearing.
+    crop_ndvi = float(np.nanmean(ndvi(flat_window(CROP, seed=4).bands)))
+    assert 0.3 < crop_ndvi < 0.5
 
 
 def test_flat_window_is_deterministic() -> None:

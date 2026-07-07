@@ -38,3 +38,16 @@ def test_primary_map_must_have_a_rule() -> None:
 def test_threshold_must_be_positive() -> None:
     with pytest.raises(ValidationError):
         ThresholdRule(map="ndvi", direction="decrease", threshold=0.0)
+
+
+def test_forest_preset_has_was_forest_precondition() -> None:
+    # NDVI decrease alone conflates deforestation with crop harvest; the precondition
+    # requires the *before* image to have been forest-level green.
+    forest = VERTICAL_PRESETS["forest"]
+    precondition = [r for r in forest.rules if r.map == "ndvi_before"]
+    assert len(precondition) == 1
+    assert precondition[0].direction == "increase"
+    assert precondition[0].threshold >= 0.5
+    # the change rule (ndvi decrease) is still present and remains the primary map
+    assert forest.primary_map == "ndvi"
+    assert any(r.map == "ndvi" and r.direction == "decrease" for r in forest.rules)

@@ -9,10 +9,11 @@ from shapely.geometry import Polygon, box
 
 from overwatch.imagery.models import AOIWindow
 
-FOREST = {"red": 400, "green": 600, "blue": 300, "nir": 3500}
-BARE = {"red": 2200, "green": 1900, "blue": 1500, "nir": 2600}
+FOREST = {"red": 400, "green": 600, "blue": 300, "nir": 3500}  # NDVI ~0.79
+BARE = {"red": 2200, "green": 1900, "blue": 1500, "nir": 2600}  # NDVI ~0.08
 WATER = {"red": 300, "green": 500, "blue": 600, "nir": 150}
 BUILT = {"red": 2600, "green": 2400, "blue": 2200, "nir": 2300}
+CROP = {"red": 1500, "green": 1600, "blue": 1000, "nir": 3500}  # NDVI ~0.40: green but not forest
 
 TRANSFORM_10M = Affine(10.0, 0.0, 500_000.0, 0.0, -10.0, 1_000_000.0)
 EPSG = 32643  # UTM 43N (Vizhinjam's zone); any projected CRS works
