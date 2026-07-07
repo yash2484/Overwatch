@@ -3,7 +3,7 @@
 > Living session-state file. Convention: nothing is "done" until it's in **Built & verified** with a note on *how* it was verified.
 
 ## Current phase
-Phase 2 — Change Detection Engine: **merged to main** (PR #5). Follow-up hardening on branch `phase-2-forest-precondition` (was-forest precondition for the forest preset): complete and verified, awaiting user merge via GitHub PR (compare: https://github.com/yash2484/Overwatch/compare/main...phase-2-forest-precondition). Next: Phase 3 — Detection persistence + API + jobs (fresh session, write plan first per `plans/2026-07-03-mvp-roadmap.md`).
+Phase 3 — Detection persistence + API + jobs: **kickoff** (brainstorm → plan per `plans/2026-07-03-mvp-roadmap.md`). Phase 2 fully on main: engine merged via PR #5, forest was-forest precondition merged via PR #6 (2026-07-07).
 
 ## Last verified working
 Forest was-forest precondition (2026-07-07, in-container): forest preset now ANDs `ndvi_before ≥ 0.60` with the NDVI-decrease rule, so crop harvest no longer reads as deforestation. TDD: crop-harvest synthetic pair now yields 0 detections (was 1); genuine FOREST→BARE clearing still detected (regression guard). Real Novo Progresso pair dropped from **103 → 63** detections — removed polygons were cropland/pasture in fields already cleared by 2023; retained polygons sit on forest-edge transitions (eyeballed). 76 tests + ruff check + ruff format all green in-container.
