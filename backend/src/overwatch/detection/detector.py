@@ -56,16 +56,23 @@ def _check_coregistered(before: AOIWindow, after: AOIWindow) -> None:
 def _change_maps(
     before: AOIWindow, after: AOIWindow, preset: DetectionPreset, usable: np.ndarray
 ) -> dict[str, np.ndarray]:
-    """Delta maps for every rule's map name. Index maps see NaN-masked bands; SSIM sees raw."""
+    """A map per rule name. Delta and absolute-before index maps see NaN-masked bands; SSIM raw.
+
+    `"<index>"` -> after-minus-before delta; `"<index>_before"` -> the absolute index in the
+    before image (a precondition on prior land cover, e.g. "was this forest?").
+    """
     needed = {rule.map for rule in preset.rules}
     masked_before = {k: apply_mask(v, usable) for k, v in before.bands.items()}
     masked_after = {k: apply_mask(v, usable) for k, v in after.bands.items()}
     maps: dict[str, np.ndarray] = {}
-    for name in needed & _INDEX_FNS.keys():
-        fn = _INDEX_FNS[name]
-        maps[name] = index_delta(fn(masked_before), fn(masked_after))
-    if "ssim_dissim" in needed:
-        maps["ssim_dissim"] = ssim_dissimilarity(
-            before.bands[preset.ssim_band], after.bands[preset.ssim_band]
-        )
+    for name in needed:
+        if name in _INDEX_FNS:
+            fn = _INDEX_FNS[name]
+            maps[name] = index_delta(fn(masked_before), fn(masked_after))
+        elif name.endswith("_before") and name.removesuffix("_before") in _INDEX_FNS:
+            maps[name] = _INDEX_FNS[name.removesuffix("_before")](masked_before)
+        elif name == "ssim_dissim":
+            maps[name] = ssim_dissimilarity(
+                before.bands[preset.ssim_band], after.bands[preset.ssim_band]
+            )
     return maps

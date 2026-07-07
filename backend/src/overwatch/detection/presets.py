@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field, model_validator
 
 from overwatch.detection.models import ChangeType
 
-MapName = Literal["ndvi", "ndwi", "nbr", "ssim_dissim"]
+# "<index>" gates on the after-minus-before delta; "<index>_before" gates on the
+# absolute index in the before image (a precondition on prior land cover).
+MapName = Literal["ndvi", "ndwi", "nbr", "ssim_dissim", "ndvi_before"]
 
 
 class ThresholdRule(BaseModel):
@@ -48,7 +50,13 @@ VERTICAL_PRESETS: dict[str, DetectionPreset] = {
     "forest": DetectionPreset(
         vertical="forest",
         change_type=ChangeType.VEGETATION_LOSS,
-        rules=[ThresholdRule(map="ndvi", direction="decrease", threshold=0.20)],
+        rules=[
+            ThresholdRule(map="ndvi", direction="decrease", threshold=0.20),
+            # Precondition: the before image must have been forest-level green. Without it,
+            # a harvested crop (which also drops NDVI) reads as deforestation. 0.6 is a
+            # tunable engineering default — healthy forest sits ~0.7-0.85, cropland ~0.3-0.5.
+            ThresholdRule(map="ndvi_before", direction="increase", threshold=0.60),
+        ],
         primary_map="ndvi",
         min_area_m2=5_000.0,
     ),
