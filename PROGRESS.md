@@ -3,7 +3,7 @@
 > Living session-state file. Convention: nothing is "done" until it's in **Built & verified** with a note on *how* it was verified.
 
 ## Current phase
-Phase 3 — Detection persistence + API + jobs: **kickoff** (brainstorm → plan per `plans/2026-07-03-mvp-roadmap.md`). Phase 2 fully on main: engine merged via PR #5, forest was-forest precondition merged via PR #6 (2026-07-07).
+Phase 3 — Detection persistence + API + jobs: **executing** `plans/2026-07-07-phase-3-persistence-api-jobs.md`. Tasks 1–6 of 12 done (user-requested stop after Task 6, 2026-07-08). Design spec approved: `design-specs/2026-07-07-phase-3-persistence-api-jobs-design.md`. Next session: resume at Task 7 (detection replace-set + spatial query).
 
 ## Last verified working
 Forest was-forest precondition (2026-07-07, in-container): forest preset now ANDs `ndvi_before ≥ 0.60` with the NDVI-decrease rule, so crop harvest no longer reads as deforestation. TDD: crop-harvest synthetic pair now yields 0 detections (was 1); genuine FOREST→BARE clearing still detected (regression guard). Real Novo Progresso pair dropped from **103 → 63** detections — removed polygons were cropland/pasture in fields already cleared by 2023; retained polygons sit on forest-edge transitions (eyeballed). 76 tests + ruff check + ruff format all green in-container.
@@ -39,7 +39,14 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
   5. 72 tests + `ruff check` + `ruff format --check` green in-container (40 new Phase-2 tests; no preset tuning needed — spec defaults held).
 
 ## In progress
-- Nothing (Phase 2 branch awaiting user merge).
+- Phase 3 Tasks 1–6 complete on `phase-3-persistence-api-jobs` (verified 2026-07-08, in-container: **97 tests + ruff check + ruff format all green**):
+  1. Migration 0002 — `aois`/`jobs`/`detections` with GiST indexes + `ix_detections_pair`; ORM models.
+  2. `overwatch.geodesy` — geodesic area (cap math), UTM→WGS84 reprojection.
+  3. AOI repository (slug upsert never clobbers cadence) + idempotent `python -m overwatch.db.seed`.
+  4. Structured error envelope (`ApiError` + wrapped validation errors) + sync session dependency.
+  5. AOI CRUD endpoints; 500 km² geodesic cap from `Settings.max_aoi_km2` → 422 `aoi_too_large`.
+  6. Job repository — staged lifecycle, atomic attempts counter, `latest_succeeded_job`.
+- Remaining: Tasks 7–12 (detection replace-set persistence, harmonize lift, Celery chain, job/detections endpoints, beat re-check, live verification gate + push).
 
 ## Next up
 - User: open/merge the Phase 2 PR (CI re-runs on the PR via `pull_request` trigger; verify green before merging).
