@@ -21,15 +21,21 @@ def migrated_db() -> None:
 
 
 @pytest.fixture()
-def db_session(migrated_db: None) -> Iterator[Session]:
-    with session_scope() as session:
-        yield session
-
-
-@pytest.fixture()
 def clean_t3(migrated_db: None) -> Iterator[None]:
     """Delete Phase-3 test rows (slug prefix t3-) after the test; cascades jobs/detections."""
     yield
     with session_scope() as session:
         session.execute(text("DELETE FROM aois WHERE slug LIKE 't3-%'"))
         session.execute(text("DELETE FROM scenes WHERE aoi_slug LIKE 't3-%'"))
+
+
+@pytest.fixture()
+def db_session(clean_t3: None) -> Iterator[Session]:
+    """Function-scoped session over a migrated DB.
+
+    Depends on clean_t3 so the cleanup DELETE always tears down AFTER this session
+    commits — the reverse order deadlocks: the still-open transaction holds row locks
+    the cleanup blocks on, while the commit waits for the cleanup to finish.
+    """
+    with session_scope() as session:
+        yield session

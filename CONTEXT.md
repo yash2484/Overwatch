@@ -26,6 +26,13 @@ Running a migration **in-process** (the `migrated_db` pytest fixture, any progra
 - Fix: `fileConfig(config.config_file_name, disable_existing_loggers=False)` in `backend/alembic/env.py`.
 - Symptom to recognize: a log-asserting test passes in isolation but fails in the full suite, with the failure appearing when an unrelated DB test file is added before it alphabetically (discovered Phase 3, Task 1: adding `test_db_schema.py` broke `test_gating.py`).
 
+## Pytest DB fixtures: cleanup must depend on the session fixture's consumer
+
+A function-scoped DB-session fixture (`db_session`) keeps its transaction open until teardown. Any cleanup fixture that deletes the same rows from a *separate* session must tear down **after** it — otherwise the cleanup `DELETE` blocks on row locks held by the still-open transaction while that transaction's commit waits for the cleanup to return: a cross-session hang Postgres cannot detect as a deadlock (one waiter is Python, not SQL).
+
+- Fix shape: `db_session` **depends on** `clean_t3` (`def db_session(clean_t3)`), so pytest instantiates cleanup first and finalizes it last, after the commit.
+- Sneaky part: the wrong order passes on a clean DB (uncommitted rows are invisible to the cleanup, which silently deletes nothing and leaks them); it only hangs on the *next* run when the leaked rows are visible and lockable. Discovered Phase 3, Task 6 — a 30-minute pytest hang; `pg_stat_activity` showed `idle in transaction` + a `DELETE ... LIKE 't3-%'` waiting on a lock.
+
 ## Docker/WSL2 requirement
 
 GDAL/rasterio on native Windows is a known tarpit (PROJECT.md §2.3) — the dev environment lives entirely in containers. Don't debug import/build errors on the host; reproduce inside `docker compose` first.
