@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     stac_api_url: str = "https://earth-search.aws.element84.com/v1"
     anthropic_api_key: str | None = None
     fusion_enabled: bool = True
+    max_aoi_km2: float = 500.0  # design spec §6 — reject larger AOIs at the API
 
 
 settings = Settings()
