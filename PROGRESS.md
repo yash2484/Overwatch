@@ -3,10 +3,12 @@
 > Living session-state file. Convention: nothing is "done" until it's in **Built & verified** with a note on *how* it was verified.
 
 ## Current phase
-Phase 3 — Detection persistence + API + jobs: **executing** `plans/2026-07-07-phase-3-persistence-api-jobs.md`. Tasks 1–6 of 12 done (user-requested stop after Task 6, 2026-07-08). Design spec approved: `design-specs/2026-07-07-phase-3-persistence-api-jobs-design.md`. Next session: resume at Task 7 (detection replace-set + spatial query).
+Phase 3 — Detection persistence + API + jobs: **complete and verified** (2026-07-09), all 12 tasks executed on branch `phase-3-persistence-api-jobs`. Verification gate passed live in-container; evidence in the plan's "Verification Gate — evidence" section. Awaiting user merge via GitHub PR (compare: https://github.com/yash2484/Overwatch/compare/main...phase-3-persistence-api-jobs). Next: Phase 4 — Briefs + evidence chain.
 
 ## Last verified working
-Forest was-forest precondition (2026-07-07, in-container): forest preset now ANDs `ndvi_before ≥ 0.60` with the NDVI-decrease rule, so crop harvest no longer reads as deforestation. TDD: crop-harvest synthetic pair now yields 0 detections (was 1); genuine FOREST→BARE clearing still detected (regression guard). Real Novo Progresso pair dropped from **103 → 63** detections — removed polygons were cropland/pasture in fields already cleared by 2023; retained polygons sit on forest-edge transitions (eyeballed). 76 tests + ruff check + ruff format all green in-container.
+Phase 3 full pipeline (2026-07-09, in-container): `POST /aois/vizhinjam/jobs` → **HTTP 202** → Celery chain walks `ingest_before → ingest_after → detect` → **succeeded in 463 s with 12 detection polygons** in PostGIS. Queryable by spatial predicate (`ST_Intersects` bbox → 12 features, largest 18,200 m²; disjoint bbox → 0). Re-run of the identical windows selected the same scene pair and left **12 rows, zero duplicates** (pks 37…→49…, proving replace-set deleted+reinserted). Failure path: unreachable STAC → attempts climb 0→2→4 then structured `task_failed`; pre-Sentinel-2 window → fast-fail `no_usable_scene` at attempts=1. Beat: daily 03:00 crontab, due-selection baselines on the last after-scene and stamps `last_checked_at`. **117 tests + ruff check + ruff format green.**
+
+Prior — Forest was-forest precondition (2026-07-07, in-container): forest preset now ANDs `ndvi_before ≥ 0.60` with the NDVI-decrease rule, so crop harvest no longer reads as deforestation. TDD: crop-harvest synthetic pair now yields 0 detections (was 1); genuine FOREST→BARE clearing still detected (regression guard). Real Novo Progresso pair dropped from **103 → 63** detections — removed polygons were cropland/pasture in fields already cleared by 2023; retained polygons sit on forest-edge transitions (eyeballed). 76 tests + ruff check + ruff format all green in-container.
 Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 construction polygons on the new terminal/breakwater; BOA-offset harmonization verified live on the mixed-baseline Vizhinjam pair (2025 scene offset −1000); 72 tests green.
 
 ## Built & verified
@@ -37,21 +39,28 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
   3. Sentinel-2 BOA-offset harmonization: `SceneMeta.dn_offset` + `boa_dn_offset(props)` (−1000 for baseline ≥ 04.00 DNs still carrying the offset). Verified live on the mixed-baseline Vizhinjam pair (2021 = 0, 2025 = −1000).
   4. Eyeball gate: Vizhinjam 2021→2025 → 9 construction polygons tracing the completed terminal/reclaimed backyard/breakwater (largest 17,900 m²); Novo Progresso 2023→2024 → 103 vegetation-loss polygons on the BR-163 clearings. Overlay PNGs in `data/` (gitignored).
   5. 72 tests + `ruff check` + `ruff format --check` green in-container (40 new Phase-2 tests; no preset tuning needed — spec defaults held).
+- [x] Phase 3 design spec: `design-specs/2026-07-07-phase-3-persistence-api-jobs-design.md` (user-approved 2026-07-07: core-only schema, Celery chain + jobs table, date-window scene selection, sync DB layer).
+- [x] Phase 3 plan: `plans/2026-07-07-phase-3-persistence-api-jobs.md` (12 tasks, all executed; Verification Gate evidence appended).
+- [x] **Phase 3 — Detection persistence + API + jobs.** *Verified 2026-07-09, all in-container; full evidence in the plan's Verification Gate section:*
+  1. Migration 0002 — `aois`/`jobs`/`detections` with GiST indexes on both geometry columns + `ix_detections_pair`; `ON DELETE CASCADE` from aois.
+  2. `overwatch.geodesy` — geodesic area (cap math) + UTM→WGS84 reprojection for stored polygons.
+  3. AOI repository (slug upsert never clobbers cadence/last_checked_at) + idempotent seeder (`python -m overwatch.db.seed` twice → same ids `[6,7,8]`).
+  4. Structured error envelope on every non-2xx (`ApiError` + wrapped FastAPI validation errors).
+  5. AOI CRUD; 500 km² geodesic cap from `Settings.max_aoi_km2` → 422 `aoi_too_large` with measured km² in `detail`.
+  6. Job repository — staged lifecycle, atomic attempts counter, structured `error` payload, `latest_succeeded_job`.
+  7. Detection **replace-set** persistence on the `(aoi, before_scene, after_scene)` natural key + `ST_Intersects`/`since`/`change_type` queries.
+  8. `imagery/harmonize.py` — BOA offset lifted out of the Phase-2 CLI, shared with the worker.
+  9. Celery chain `ingest_before → ingest_after → detect`; transient errors retry with backoff (`attempts` visible while polling), permanent errors fail fast with a structured code.
+  10. `POST /aois/{slug}/jobs` → 202 + `job_id`; `GET /jobs/{id}` polling; `GET /aois/{slug}/detections` → GeoJSON FeatureCollection.
+  11. Beat: daily 03:00 tick → `enqueue_due_rechecks`; pure `is_due`/`recheck_windows`; skips AOIs with no successful baseline run.
+  12. **Live gate:** API submit → 12 detections on the real Vizhinjam 2021→2025 pair (463 s); spatial query returns them, disjoint bbox returns 0; re-run → same pair, 12 rows, **zero duplicates** (pks replaced); unreachable STAC → attempts 0→2→4 → `task_failed`; pre-Sentinel-2 window → `no_usable_scene` at attempts=1. **117 tests + ruff green.**
 
 ## In progress
-- Phase 3 Tasks 1–6 complete on `phase-3-persistence-api-jobs` (verified 2026-07-08, in-container: **97 tests + ruff check + ruff format all green**):
-  1. Migration 0002 — `aois`/`jobs`/`detections` with GiST indexes + `ix_detections_pair`; ORM models.
-  2. `overwatch.geodesy` — geodesic area (cap math), UTM→WGS84 reprojection.
-  3. AOI repository (slug upsert never clobbers cadence) + idempotent `python -m overwatch.db.seed`.
-  4. Structured error envelope (`ApiError` + wrapped validation errors) + sync session dependency.
-  5. AOI CRUD endpoints; 500 km² geodesic cap from `Settings.max_aoi_km2` → 422 `aoi_too_large`.
-  6. Job repository — staged lifecycle, atomic attempts counter, `latest_succeeded_job`.
-- Remaining: Tasks 7–12 (detection replace-set persistence, harmonize lift, Celery chain, job/detections endpoints, beat re-check, live verification gate + push).
+- Nothing (Phase 3 branch awaiting user merge).
 
 ## Next up
-- User: open/merge the Phase 2 PR (CI re-runs on the PR via `pull_request` trigger; verify green before merging).
-- User: the Phase 1 PR (`phase-1-imagery-ingestion`) may still be open — merge order is Phase 1 then Phase 2, or rebase Phase 2 if Phase 1 lands first.
-- Phase 3 (fresh session): Detection persistence + API + jobs. Write the plan with `superpowers:writing-plans` per the roadmap; persist `Detection` polygons to PostGIS, expose via FastAPI, wire the Celery job that runs the detector on ingested scene pairs.
+- User: open/merge the Phase 3 PR (CI re-runs on the PR via `pull_request` trigger; verify green before merging).
+- Phase 4 (fresh session): Briefs + evidence chain. `BriefGenerator` (Anthropic API) narrating over stored detections only; validator rejecting any claim without ≥1 evidence link, bounded regeneration (3 attempts), `rejected` status surfaced. Creates `briefs`/`brief_claims`/`evidence_links` (deferred from Phase 3 by design). **Anthropic key enters `.env` here — user provides, never committed.**
 
 ## Open decisions
 - Exact GDELT endpoint/theme identifiers — deferred to the Phase 5 API spike (deliberate).
@@ -67,3 +76,10 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
 - Phase 2: synthetic fixtures import as `from tests.synthetic import …` (tests/ is a package with `__init__.py`) — the plan's `from synthetic import …` snippets are wrong; use the package-qualified path.
 - Phase 2: forest NDVI-decrease rule conflated deforestation with crop harvest (both drop NDVI). **Mitigated** (branch `phase-2-forest-precondition`) by ANDing a `ndvi_before ≥ 0.60` precondition — the before image must have been forest-level green. Cut real-pair detections 103 → 63. Residual: mature-crop→harvest where the crop itself was ≥0.60 NDVI can still slip through; a temporal-persistence check (deforestation is permanent, harvest recovers) is the Phase 3+ next lever if needed.
 - Phase 2: NBR index function is implemented + tested but unused by any preset (needs a `swir22` band the CLI doesn't read) — kept for future presets per the roadmap.
+- Phase 3: `worker`/`beat` compose services previously had **no source bind-mount and no `OVERWATCH_DATABASE_URL`** — they ran the Phase-0 baked image and couldn't reach Postgres, so new Celery tasks never registered. Fixed in `docker-compose.yml`. **Workers still do not hot-reload: `docker compose restart worker beat` after touching `workers/`.**
+- Phase 3: `api` now runs uvicorn with `--reload --reload-dir /app/src` (it previously ignored the mounted source, so new routers 404'd until a manual restart).
+- Phase 3: Celery `retry()` is a **no-op when a task is called directly** (`called_directly` re-raises the original exception). Tests must use `task.apply(...)` to exercise autoretry. See `CONTEXT.md`.
+- Phase 3: alembic `fileConfig` disabled already-instantiated app loggers when migrations ran in-process, breaking a caplog-based Phase-1 test once suite ordering changed. Fixed with `disable_existing_loggers=False`. See `CONTEXT.md`.
+- Phase 3: pytest DB fixtures — the cleanup fixture must tear down **after** the session commits (`db_session` depends on `clean_t3`), else the cross-session `DELETE` deadlocks against held row locks. Cost a 30-minute hang. See `CONTEXT.md`.
+- Phase 3: the same Sentinel-2 acquisition can appear as **multiple STAC items** (reprocessings, e.g. `…_0_L2A` vs `…_2_L2A`). The cloud-ascending gate picks the lowest-cloud item, which is not necessarily catalog order — the Phase-2 CLI's pick differs, giving 9 polygons where the job gives 12 on the same dates. Deterministic, not a bug; both items carry `dn_offset=0` so harmonization is not implicated.
+- Phase 3: `earth-search.aws.element84.com` DNS resolution intermittently fails inside the worker container (WSL2 DNS). It surfaces as `TransientIngestError` and the retry recovers it — observed once during the live gate run.

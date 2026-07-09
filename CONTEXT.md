@@ -11,6 +11,15 @@ Earth Search STAC items carry a raw digital-number (DN) encoding for Bottom-of-A
 - Discovered in: `c836c8e fix(phase-2): harmonize Sentinel-2 BOA offset across processing baselines`.
 - Why it matters here specifically: mixing an old-baseline scene (offset 0) with a new-baseline scene (offset -1000) in the same before/after pair produces a spurious uniform brightness shift that differencing reads as change everywhere — a false-positive generator, not a localized bug.
 
+## One acquisition, several STAC items (reprocessings)
+
+Earth Search can hold **more than one item for the same Sentinel-2 acquisition** — later reprocessings of identical pixels, distinguished by the numeric field in the id: `S2A_43PGK_20210212_0_L2A` vs `S2A_43PGK_20210212_2_L2A`.
+
+- They are not interchangeable: atmospheric correction differs between processing runs, so surface reflectance (and therefore detection polygons) differ slightly. Vizhinjam 2021→2025 yields **9 polygons via `_0_` and 12 via `_2_`**, same dates, same preset.
+- Which item you get depends on **how you pick**: `detection/cli.py` takes catalog order (`scenes[0]`); `find_usable_scene` sorts cloud-ascending and takes the first that clears the SCL gate. For 2021-02-12 the cloud values are 0.1416% (`_0_`) vs 0.0313% (`_2_`) — no tie, so each selector is deterministic but they disagree.
+- Do **not** reach for the BOA-offset explanation when counts differ across items of the same date: check `dn_offset` first. Both 2021-02-12 items carry `dn_offset=0`.
+- Consequence for idempotency: replace-set keys on `(aoi, before_scene_id, after_scene_id)`, and scene rows key on `stac_id` — so a stable selector gives a stable pair and a re-run rewrites the same rows. A selector that flip-flops between reprocessings would write a *second* pair rather than duplicate the first.
+
 ## Forest-precondition gate (deforestation preset)
 
 Raw NDVI-decrease is **not sufficient** to detect deforestation: crop harvest also drops NDVI by a similar magnitude, and a naive threshold conflates the two.

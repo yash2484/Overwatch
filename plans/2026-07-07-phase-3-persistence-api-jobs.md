@@ -2610,3 +2610,128 @@ git push -u origin phase-3-persistence-api-jobs
 ```
 
 End by giving the user the compare URL: `https://github.com/yash2484/Overwatch/compare/main...phase-3-persistence-api-jobs` (CI runs on the PR via the `pull_request` trigger; verify green before merging).
+
+---
+
+## Verification Gate — evidence (2026-07-09, all in-container)
+
+Roadmap gate: *submit AOI via API → detections queryable by spatial predicate → re-run yields zero duplicate rows → job failure path retries visibly.* **All four met.**
+
+### 1. Suite + lint
+```
+docker compose exec api pytest -q          -> 117 passed, 2 warnings in 7.37s
+docker compose exec api ruff check .       -> All checks passed!
+docker compose exec api ruff format --check .  -> 81 files already formatted
+```
+(76 at Phase-2 close → 117; +41 Phase-3 tests.)
+
+### 2. Migrate + idempotent seed
+```
+alembic upgrade head            -> 0002 applied
+python -m overwatch.db.seed     -> seeded 3 showcase aois: [6, 7, 8]
+python -m overwatch.db.seed     -> seeded 3 showcase aois: [6, 7, 8]   (same ids, idempotent)
+```
+
+### 3. Live pipeline — API submit → Celery chain → PostGIS
+`POST /aois/vizhinjam/jobs` with before 2021-02-01..28, after 2025-02-01..28 → **HTTP 202**, job `9b1bf77c…`.
+Polling `GET /jobs/{id}` every 2 s:
+```
+[  0.0s] status=queued    stage=None           attempts=0
+[  2.1s] status=running   stage=ingest_before  attempts=2
+[ 88.7s] status=running   stage=ingest_after   attempts=3
+[171.3s] status=running   stage=detect         attempts=4
+[463.4s] status=succeeded stage=detect         attempts=4
+         before_scene_id=5  after_scene_id=11  detection_count=12  error=null
+```
+Gate-selected scenes (cloud-ascending, SCL-verified):
+`S2A_43PGK_20210212_2_L2A` usable 0.999, cloud 0.03% · `S2C_43PGK_20250211_0_L2A` usable 0.983, cloud 1.9%.
+
+**Why attempts=4, not 3 (one per stage):** a genuine transient DNS failure inside the worker container
+(`Failed to resolve earth-search.aws.element84.com`) raised `TransientIngestError` during `ingest_before`;
+Celery retried after 1 s and the stage succeeded. The retry path proved itself unprompted, in production.
+
+**Why 12 detections where Phase 2 recorded 9 (same dates):** the catalog holds two *reprocessings* of the
+2021-02-12 acquisition. The Phase-2 CLI takes catalog order (`…_0_L2A`, cloud 0.1416%); the Phase-3 gate sorts
+cloud-ascending and takes `…_2_L2A` (cloud 0.0313%). Both carry `dn_offset=0`, so this is **not** a BOA-harmonization
+bug — different atmospheric reprocessing yields slightly different surface reflectance, hence a few more polygons.
+Selection is deterministic (strict cloud ordering, no tie), and the job picks the cleaner scene. Not tuned; recorded as-is.
+
+### 4. Spatial predicate + idempotent re-run
+```
+GET /aois/vizhinjam/detections?intersects=76.960,8.355,77.010,8.395&change_type=construction
+  -> 12 construction features, largest area_m2 = 18,200, geometry Polygon (EPSG:4326), src_epsg 32643
+GET …?intersects=70.0,1.0,70.1,1.1   -> 0 features   (disjoint-bbox negative control; ST_Intersects really filters)
+
+re-run identical windows -> job b06cf5e4…: succeeded, scenes=(5,11), detection_count=12, 469s
+features before re-run: 12   after re-run: 12   -> ZERO DUPLICATE ROWS
+detection row pks 37,38,39… -> 49,50,51…        (replace-set genuinely deleted+reinserted, not a no-op)
+```
+
+### 5. Failure path
+**Visible retries → structured failure.** Worker run against an unreachable STAC endpoint
+(`OVERWATCH_STAC_API_URL=http://127.0.0.1:9/does-not-exist`):
+```
+[0.0s] status=queued   stage=None          attempts=0
+[2.0s] status=running  stage=ingest_before attempts=2
+[4.0s] status=failed   stage=ingest_before attempts=4     (1 initial + max_retries=3)
+error: {"code": "task_failed", "detail": {"task": "overwatch.ingest_scene"},
+        "message": "scene search/read failed: … Connection refused"}
+```
+**Fast-fail, no wasted retries.** Pre-Sentinel-2 window (2015-01-01..05), real worker:
+```
+[10.1s] status=failed stage=ingest_before attempts=1
+error: {"code": "no_usable_scene", "message": "no scene ≥70% usable in 2015-01-01..2015-01-05 after widening"}
+```
+
+### 6. Beat
+```
+beat_schedule: {'enqueue-due-rechecks': {task: 'overwatch.enqueue_due_rechecks',
+                                         schedule: <crontab: 0 3 * * *>}}
+no cadence set        -> submitted: 0
+cadence_days=7 on vizhinjam -> first tick  -> submitted: 1
+  recheck params: before 2025-02-11..2025-02-12 (last after-scene capture),
+                  after  2025-02-12..2026-07-09 (everything newer)
+  last_checked_at stamped: True
+second tick (stamped) -> submitted: 0
+```
+(Dispatch stubbed for this check so due-selection/params/stamping were exercised without a second 8-minute
+detection run; the real dispatch path is covered by §3, §4 and the API tests. DB restored to `cadence_days=NULL`.)
+
+### 7. Final DB state
+`aois=3  jobs=4  detections=12  scenes=8`
+
+### Deviations from the plan, and why
+1. **Task 5** — the plan's `session: Session = Depends(get_session)` trips ruff `B008`. Used
+   `SessionDep = Annotated[Session, Depends(get_session)]`; behavior identical.
+2. **Task 9** — the plan's retry test expected `celery.exceptions.Retry` from a direct call. Wrong: a direct call sets
+   `request.called_directly`, and Celery's `retry()` then re-raises the original exception without retrying at all.
+   Replaced with `.apply()`, which proves `attempts` climbs 1→4 and lands a structured `task_failed` — a stronger assertion.
+   Kept a second test pinning the direct-call behavior.
+3. **Task 9 (infra, not in the plan)** — `worker`/`beat` compose services had **no source bind-mount and no
+   `OVERWATCH_DATABASE_URL`**. They silently ran the Phase-0 baked image and could not reach Postgres, so new tasks never
+   registered. Both now mount `./backend/src` and depend on `postgis`.
+4. **Task 12 (infra, not in the plan)** — `api` ran uvicorn without `--reload` despite the mounted source, so new routers
+   404'd until a restart. Added `--reload --reload-dir /app/src` to the dev compose command.
+5. **Task 1 / Task 6 (bugs found and fixed at the root)** — alembic's `fileConfig` disabled app loggers when migrations ran
+   in-process; and the `clean_t3`/`db_session` fixture teardown order deadlocked cross-session. Both in `CONTEXT.md`.
+
+### 8. Live AOI CRUD + 500 km² cap (against the running API)
+```
+POST /aois  (1°×1° box, ~12,300 km²)
+  -> 422 {"error": {"code": "aoi_too_large",
+                    "message": "AOI area 12308.8 km² exceeds the 500 km² cap",
+                    "detail": {"area_km2": 12308.778361469453, "max_km2": 500.0}}}
+POST /aois  (0.05°×0.05° box)   -> 201, area_km2 = 30.77
+DELETE /aois/gate-ok            -> 204
+```
+
+### Re-verification immediately before push (fresh commands, 2026-07-09)
+```
+pytest -q                  -> 117 passed, 2 warnings in 7.89s   (exit 0)
+ruff check .               -> All checks passed!
+ruff format --check .      -> 81 files already formatted
+alembic current            -> 0002 (head)
+celery inspect registered  -> 4 overwatch tasks
+GET /openapi.json          -> 6 paths: /aois, /aois/{slug}, /aois/{slug}/detections,
+                                       /aois/{slug}/jobs, /health, /jobs/{job_id}
+```
