@@ -11,13 +11,12 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-import numpy as np
-
 from overwatch.aois import AOI, SHOWCASE_AOIS
 from overwatch.detection.detector import ClassicalChangeDetector
 from overwatch.detection.overlay import render_detections_png
 from overwatch.detection.presets import VERTICAL_PRESETS
 from overwatch.imagery.earth_search import EarthSearchProvider
+from overwatch.imagery.harmonize import harmonize_window
 from overwatch.imagery.models import AOIWindow, SceneMeta
 
 BANDS = ("red", "green", "blue", "nir")
@@ -31,17 +30,7 @@ def _load_window(provider: EarthSearchProvider, aoi: AOI, day: date) -> tuple[Sc
         raise SystemExit(f"no scene for {aoi.slug} on {day}")
     scene = scenes[0]
     window = provider.read_window(scene, aoi.geometry(), BANDS)
-    if scene.dn_offset:
-        window = AOIWindow(
-            bands={
-                k: np.clip(v.astype(np.float32) + scene.dn_offset, 0, None)
-                for k, v in window.bands.items()
-            },
-            scl=window.scl,
-            transform=window.transform,
-            epsg=window.epsg,
-        )
-    return scene, window
+    return scene, harmonize_window(window, scene)
 
 
 def main(argv: list[str] | None = None) -> int:
