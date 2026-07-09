@@ -6,16 +6,19 @@ job row. JobTask.on_failure guarantees no job is left 'running' after a terminal
 """
 
 import logging
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import NoReturn
 
 from celery import Task, chain
 from geoalchemy2.shape import to_shape
 
+from overwatch.db.aois import list_aois, stamp_checked
 from overwatch.db.detections import replace_detections
 from overwatch.db.engine import session_scope
 from overwatch.db.jobs import (
+    create_job,
     get_job,
+    latest_succeeded_job,
     mark_failed,
     mark_succeeded,
     record_attempt,
@@ -32,6 +35,7 @@ from overwatch.imagery.harmonize import harmonize_window
 from overwatch.imagery.models import SceneMeta
 from overwatch.imagery.provider import ImageryProvider
 from overwatch.workers.celery_app import celery_app
+from overwatch.workers.recheck import is_due, recheck_windows
 
 logger = logging.getLogger(__name__)
 
@@ -161,3 +165,40 @@ def run_detection(self: Task, job_id: str) -> None:
         )
         mark_succeeded(session, job_id, count)
     logger.info("job %s: %d detections persisted", job_id, count)
+
+
+@celery_app.task(name="overwatch.enqueue_due_rechecks")
+def enqueue_due_rechecks() -> int:
+    """Daily beat tick: submit a detection job per due AOI with a prior baseline."""
+    now = datetime.now(UTC)
+    submitted = 0
+    with session_scope() as session:
+        for aoi in list_aois(session):
+            if not is_due(aoi.cadence_days, aoi.last_checked_at, now):
+                continue
+            baseline = latest_succeeded_job(session, aoi.id)
+            if baseline is None:
+                logger.info("recheck skip %s: no successful job to baseline from", aoi.slug)
+                continue
+            capture = session.get(Scene, baseline.after_scene_id).captured_at.date()
+            windows = recheck_windows(capture, now.date())
+            if windows is None:
+                logger.info("recheck skip %s: baseline capture is today", aoi.slug)
+                continue
+            params = {
+                "before": {
+                    "start": windows.before[0].isoformat(),
+                    "end": windows.before[1].isoformat(),
+                },
+                "after": {
+                    "start": windows.after[0].isoformat(),
+                    "end": windows.after[1].isoformat(),
+                },
+            }
+            job = create_job(session, aoi.id, params)
+            job_id = str(job.id)
+            stamp_checked(session, aoi.id, now)
+            session.commit()  # visible to the worker before dispatch
+            dispatch_detection_job(job_id)
+            submitted += 1
+    return submitted
