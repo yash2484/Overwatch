@@ -22,3 +22,6 @@ Thumbs.db
 data/
 *.tif
 *.tiff
+
+# graphify knowledge graph outputs
+graphify-out/
