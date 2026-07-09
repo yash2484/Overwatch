@@ -59,7 +59,7 @@
 ## Phase 3 — Detection persistence + API + jobs end-to-end
 
 **Goal:** full pipeline: API call → Celery ingestion → detection → queryable PostGIS events.
-**Deliverables:** full schema (aois, scenes, detections, briefs, brief_claims, evidence_links, news_articles — design spec §4) with GiST indexes; AOI CRUD + job submit/status endpoints (REST polling, 2 s); Celery task chain with retries/backoff; idempotency on natural keys; AOI size cap 500 km² rejected with structured error; beat schedule wired (weekly re-check).
+**Deliverables:** core schema (aois, jobs, detections; scenes exists — briefs/claims/evidence deferred to Phase 4, news_articles to Phase 5 per the 2026-07-07 Phase 3 brainstorm) with GiST indexes; AOI CRUD + job submit/status endpoints (REST polling, 2 s); Celery task chain with retries/backoff; idempotency on natural keys; AOI size cap 500 km² rejected with structured error; beat schedule wired (weekly re-check).
 **Gate:** submit AOI via API → detections queryable by spatial predicate; re-run produces zero duplicate rows; job failure path retries visibly.
 
 ## Phase 4 — Briefs + evidence chain

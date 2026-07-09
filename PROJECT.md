@@ -150,6 +150,7 @@ Resolved defaults (starting points — tuned empirically in Phase 2, all in per-
 
 ### 6b. Development-time self-healing — same discipline as Coup/AgentProof
 - **`PROGRESS.md`** — same convention as the Coup file: phase, last-verified-working, built-and-verified with verification notes, next up, open decisions. Nothing is "done" without a verification note.
+- **`CONTEXT.md`** — domain glossary, maintained via `domain-modeling`. Captures exactly the kind of fact that otherwise gets rediscovered per phase (Sentinel-2 baseline offsets, precondition rules, CRS gotchas).
 - **TDD on the Change Detection Engine** — it's pure math on arrays: synthetic-raster fixtures (inject a known "new building" into a synthetic image pair; assert the polygon comes out). Use the `test-driven-development` skill. This is the ideal TDD target in the whole project.
 - **Typed interfaces** — Pydantic v2 models for `AOI`, `Scene`, `Detection`, `Brief`, `EvidenceLink`; breakage surfaces at boundaries.
 - **Small modules behind interfaces** — `ImageryProvider` (STAC today, swappable), `ChangeDetector` (classical today, DL later — this interface is what makes the DL extension additive), `BriefGenerator`.
@@ -197,8 +198,12 @@ The `ChangeDetector` interface makes this a drop-in: train/fine-tune a change-se
 - `test-driven-development` / `context-mode:tdd` — the Change Detection Engine (Phase 2) is the ideal target.
 - `superpowers:writing-plans` → `superpowers:executing-plans` — brainstorm → phased plan → execution with checkpoints.
 - `verification-before-completion` — gate every phase (backbone of dev-time self-healing).
-- `systematic-debugging` / `context-mode:diagnose` — geospatial bugs (CRS mismatches, masking errors) are subtle; use the disciplined loop.
+- **`diagnosing-bugs`** — for domain-data bugs specifically: anything that only surfaces against real Sentinel-2/GDELT data rather than synthetic fixtures (the BOA-offset and forest-precondition bugs were both this kind). Leads with building a tight, real-data feedback loop before hypothesizing.
+- **`systematic-debugging`** — for everything else (CRS mismatches, masking errors, ordinary logic bugs reproducible from a fixture).
 - `superpowers:using-git-worktrees` — isolate the DL-extension work later.
+- **`domain-modeling`** — maintain `CONTEXT.md` (now created) continuously: every domain fact discovered from a real-data bug (band offsets, precondition rules, CRS gotchas) goes there, not just into the fix commit message.
+- **`resolving-merge-conflicts`** — for in-progress merge/rebase conflicts. Prefer `gh pr merge` over merging through the GitHub web UI — a web-UI merge already caused one accidental "revert PR" incident (PROGRESS.md, 2026-07-03) that needed manual cleanup.
+- After each merge, delete the local feature branch (`git branch -d`) — two Phase 2 branches sat around locally for a full phase after merging before this was caught.
 - `frontend-design` — the map UI should read as intentional; this is the flagship's face.
 
 **MCPs / external services:**
@@ -238,5 +243,5 @@ The `ChangeDetector` interface makes this a drop-in: train/fine-tune a change-se
 1. Brainstorm complete (2026-07-02): fusion IN, constrained (§3); Earth Search confirmed (§4); AOIs selected (§5); robustness and pipeline defaults resolved (§4, §6a). Full rationale in `design-specs/2026-07-02-overwatch-mvp-design.md`.
 2. This file is updated; all `[BRAINSTORM]` tags deleted.
 3. `superpowers:writing-plans` → phased plan → `superpowers:executing-plans` with verification gates per phase.
-4. Keep `PROGRESS.md` current every session (same convention as the Coup file).
+4. Keep `PROGRESS.md` and `CONTEXT.md` current every session (same convention as the Coup file).
 5. Nothing here is rigid — but scope discipline is: the MVP is §9 Phases 0–7. Extensions wait. The flagship fails only one way: staying unfinished.
