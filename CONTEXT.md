@@ -33,6 +33,20 @@ A function-scoped DB-session fixture (`db_session`) keeps its transaction open u
 - Fix shape: `db_session` **depends on** `clean_t3` (`def db_session(clean_t3)`), so pytest instantiates cleanup first and finalizes it last, after the commit.
 - Sneaky part: the wrong order passes on a clean DB (uncommitted rows are invisible to the cleanup, which silently deletes nothing and leaks them); it only hangs on the *next* run when the leaked rows are visible and lockable. Discovered Phase 3, Task 6 — a 30-minute pytest hang; `pg_stat_activity` showed `idle in transaction` + a `DELETE ... LIKE 't3-%'` waiting on a lock.
 
+## Celery worker/beat containers need the same mounts and DB env as `api`
+
+Through Phase 2 the `worker` and `beat` services only ever ran `overwatch.ping`, so their compose entries carried neither a source bind-mount nor `OVERWATCH_DATABASE_URL`. They silently ran the **baked image** (stale code) and had no Postgres access at all.
+
+- Symptom: `celery inspect registered` lists only the tasks that existed when the image was last built; new tasks appear in `api` (which *is* mounted) but never in the worker, and `docker compose restart worker` does not help — only a rebuild would.
+- Fix (Phase 3, Task 9): `worker` and `beat` now mount `./backend/src:/app/src`, set `OVERWATCH_DATABASE_URL`, and `depends_on: postgis`.
+- Standing rule: **workers do not hot-reload.** After changing `overwatch/workers/*`, run `docker compose restart worker beat`; after changing the Dockerfile or deps, `docker compose up -d --build worker beat`.
+
+## Celery `retry()` is a no-op when a task is called directly
+
+`task_fn(args)` sets `request.called_directly`, and Celery's `retry()` then **re-raises the original exception instead of retrying**. A test that calls the task directly can never observe `autoretry_for` / backoff, and `on_failure` never fires either.
+
+- To exercise the real retry path in tests, use `task.apply(args=(...))`: it runs eagerly with `called_directly=False`, burns all `max_retries`, and ends in `FAILURE` with `on_failure` recorded. Phase 3's `test_network_error_retries_visibly_then_fails` asserts `attempts == 4` (1 initial + 3 retries) this way.
+
 ## Docker/WSL2 requirement
 
 GDAL/rasterio on native Windows is a known tarpit (PROJECT.md §2.3) — the dev environment lives entirely in containers. Don't debug import/build errors on the host; reproduce inside `docker compose` first.

@@ -47,8 +47,14 @@ services:
     build: ./backend
     command: celery -A overwatch.workers.celery_app worker --loglevel=info
     environment:
+      OVERWATCH_DATABASE_URL: postgresql://overwatch:overwatch_dev@postgis:5432/overwatch
       OVERWATCH_REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend/src:/app/src
+      - ./data:/app/data
     depends_on:
+      postgis:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -56,8 +62,13 @@ services:
     build: ./backend
     command: celery -A overwatch.workers.celery_app beat --loglevel=info
     environment:
+      OVERWATCH_DATABASE_URL: postgresql://overwatch:overwatch_dev@postgis:5432/overwatch
       OVERWATCH_REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend/src:/app/src
     depends_on:
+      postgis:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
