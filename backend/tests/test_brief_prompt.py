@@ -55,7 +55,11 @@ def test_first_message_is_single_user_turn_with_full_context_under_cap() -> None
     content = messages[0]["content"]
 
     assert request.aoi_name in content
-    assert request.vertical in content
+    # Assert the exact labeled field the prompt renders (`vertical: port`), not a bare
+    # substring check — `request.vertical` ("port") is also a substring of the AOI name
+    # ("Vizhinjam International Seaport, Kerala"), so `request.vertical in content` would
+    # pass even if the vertical field were never rendered at all.
+    assert f"vertical: {request.vertical}" in content
     assert request.before_date.isoformat() in content
     assert request.after_date.isoformat() in content
     for d in detections:
@@ -110,6 +114,42 @@ def test_truncation_keeps_50_largest_and_reports_true_totals(caplog) -> None:
     assert any(record.levelno == logging.WARNING for record in caplog.records)
     assert "60" in caplog.text
     assert "50" in caplog.text
+
+
+def test_truncation_cap_is_read_from_settings_not_hardcoded(monkeypatch) -> None:
+    # Proves the cap in `_select_for_prompt` is actually `settings.brief_max_prompt_detections`
+    # read at call time, not a hardcoded `50`. If `prompt.py` were changed to `cap = 50`,
+    # this test would still see all 6 detections serialized and FAIL the `== 3` assertions
+    # below, whereas `test_truncation_keeps_50_largest_and_reports_true_totals` would keep
+    # passing either way (it never varies the cap).
+    #
+    # `prompt.py` does `from overwatch.config import settings` then reads
+    # `settings.brief_max_prompt_detections` at call time — that import binds the name
+    # `settings` in `overwatch.briefs.prompt`'s namespace to the SAME `Settings` instance
+    # held by `overwatch.config.settings` (not a copy), so patching the attribute on the
+    # module-qualified object mutates the one instance both modules see.
+    from overwatch.briefs import prompt as prompt_module
+
+    monkeypatch.setattr(prompt_module.settings, "brief_max_prompt_detections", 3)
+
+    # Non-monotonic areas: neither ascending nor descending in detection-id order, so a
+    # naive "keep the first N" truncation (or the cap not applying at all) would produce a
+    # different survivor set than "keep the 3 largest by area".
+    areas = [400.0, 100.0, 600.0, 200.0, 500.0, 300.0]
+    detections = [_detection(i + 1, "new_structure", area) for i, area in enumerate(areas)]
+    request = _request(detections)
+
+    messages = build_messages(request, [])
+    content = messages[0]["content"]
+
+    sorted_desc = sorted(detections, key=lambda d: d.area_m2, reverse=True)
+    included, excluded = sorted_desc[:3], sorted_desc[3:]
+    assert len(included) == 3
+    assert len(excluded) == 3
+    for d in included:
+        assert f"id={d.id} type=" in content
+    for d in excluded:
+        assert f"id={d.id} type=" not in content
 
 
 def test_one_failure_adds_assistant_and_user_turns() -> None:

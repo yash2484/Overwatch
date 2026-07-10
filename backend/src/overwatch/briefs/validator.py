@@ -18,6 +18,7 @@ No I/O, no DB, no LLM calls. `validate_brief` is a plain function: `BriefDraft` 
 """
 
 import re
+from datetime import date
 
 from overwatch.briefs.models import BriefDraft, BriefRequest, ClaimDraft, Violation
 
@@ -36,7 +37,11 @@ _AREA_RE = re.compile(
     re.IGNORECASE,
 )
 _PERCENT_RE = re.compile(r"\d[\d,.]*\s*%")
-_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+# Month/day are 1-or-2 digit so unpadded ISO dates ("2021-2-12") are still caught by
+# Gate 3 rather than silently passing the date-figure check; padding-insensitive
+# comparison happens in `_check_dates` below (never string-compare against an
+# always-padded `date.isoformat()`).
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{1,2}-\d{1,2}")
 _MONTH_NAMES = (
     "January",
     "February",
@@ -51,7 +56,9 @@ _MONTH_NAMES = (
     "November",
     "December",
 )
-_MONTH_DATE_RE = re.compile(rf"({'|'.join(_MONTH_NAMES)})\s+(\d{{4}})", re.IGNORECASE)
+# Optional comma before the year ("February, 2021") in addition to the plain
+# "February 2021" form.
+_MONTH_DATE_RE = re.compile(rf"({'|'.join(_MONTH_NAMES)}),?\s+(\d{{4}})", re.IGNORECASE)
 _MONTH_NUMBER = {name.lower(): i for i, name in enumerate(_MONTH_NAMES, start=1)}
 
 
@@ -101,12 +108,19 @@ def _check_area(claim: ClaimDraft, seq: int, linked_area_m2: float) -> list[Viol
 
 def _check_dates(claim: ClaimDraft, seq: int, request: BriefRequest) -> list[Violation]:
     violations: list[Violation] = []
-    before_iso = request.before_date.isoformat()
-    after_iso = request.after_date.isoformat()
+    scene_dates = (request.before_date, request.after_date)
 
     for match in _ISO_DATE_RE.finditer(claim.text):
         iso = match.group(0)
-        if iso not in (before_iso, after_iso):
+        year_str, month_str, day_str = iso.split("-")
+        try:
+            # Parse to a `date` (not a string compare) so an unpadded quote like
+            # "2021-2-12" is recognized as equal to the padded scene date it means.
+            quoted_date: date | None = date(int(year_str), int(month_str), int(day_str))
+        except ValueError:
+            # Impossible calendar date (e.g. "2021-13-45") can't be a scene date either.
+            quoted_date = None
+        if quoted_date not in scene_dates:
             violations.append(
                 Violation(
                     code="date_mismatch",

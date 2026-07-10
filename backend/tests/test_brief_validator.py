@@ -132,3 +132,60 @@ def test_gate3_date_mismatch() -> None:
         ],
     )
     assert validate_brief(ok, _req()) == []
+
+
+def test_gate3_date_mismatch_unpadded_iso_still_caught() -> None:
+    # "2021-2-9" is a genuinely hallucinated date: neither before_date (2021-02-12)
+    # nor after_date (2025-02-11), and unpadded (single-digit month AND day) so the
+    # old zero-padded-only regex `\d{4}-\d{2}-\d{2}` never matches it at all and the
+    # date-figure check silently skips over it (no date_mismatch, wrongly).
+    bad = BriefDraft(
+        headline="H",
+        claims=[ClaimDraft(text="Captured on 2021-2-9.", claim_type="observed", evidence=[1])],
+    )
+    assert any(v.code == "date_mismatch" for v in validate_brief(bad, _req()))
+
+
+def test_gate3_date_unpadded_iso_matching_before_date_still_passes() -> None:
+    # "2021-2-12" (unpadded) is numerically the SAME calendar date as before_date
+    # (2021-02-12, padded). A correct padding-insensitive fix must recognize this as
+    # a match (no date_mismatch) — comparing the raw strings ("2021-2-12" != the
+    # always-padded "2021-02-12") would wrongly flag a true, correctly-cited date as
+    # a mismatch, violating the gate's "a matching date must still pass" contract.
+    ok = BriefDraft(
+        headline="H",
+        claims=[ClaimDraft(text="Captured on 2021-2-12.", claim_type="observed", evidence=[1])],
+    )
+    assert validate_brief(ok, _req()) == []
+
+
+def test_gate3_date_mismatch_month_name_with_comma() -> None:
+    # "January, 2019" (comma before year) must still be checked against the scene
+    # dates, not silently skipped because the regex required a bare space.
+    bad = BriefDraft(
+        headline="H",
+        claims=[ClaimDraft(text="Captured in January, 2019.", claim_type="observed", evidence=[1])],
+    )
+    assert any(v.code == "date_mismatch" for v in validate_brief(bad, _req()))
+
+
+def test_gate3_date_mismatch_regression_guards() -> None:
+    # Existing passing cases must still pass after the regex/parsing changes.
+    ok_month_pair = BriefDraft(
+        headline="H",
+        claims=[
+            ClaimDraft(
+                text="Between February 2021 and February 2025.",
+                claim_type="observed",
+                evidence=[1],
+            )
+        ],
+    )
+    assert validate_brief(ok_month_pair, _req()) == []
+
+    # Padded ISO date that IS the before_date must not be flagged.
+    ok_padded_iso = BriefDraft(
+        headline="H",
+        claims=[ClaimDraft(text="Captured on 2021-02-12.", claim_type="observed", evidence=[1])],
+    )
+    assert validate_brief(ok_padded_iso, _req()) == []
