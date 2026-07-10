@@ -56,7 +56,13 @@ def claims_with_evidence(
     if not claims:
         return []
     claim_ids = [c.id for c in claims]
-    links = list(session.scalars(select(EvidenceLink).where(EvidenceLink.claim_id.in_(claim_ids))))
+    links = list(
+        session.scalars(
+            select(EvidenceLink)
+            .where(EvidenceLink.claim_id.in_(claim_ids))
+            .order_by(EvidenceLink.id)
+        )
+    )
     by_claim: dict[int, list[EvidenceLink]] = {cid: [] for cid in claim_ids}
     for link in links:
         by_claim[link.claim_id].append(link)

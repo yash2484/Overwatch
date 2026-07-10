@@ -11,8 +11,10 @@ from overwatch.db.aois import upsert_aoi
 from overwatch.db.briefs import (
     claims_with_evidence,
     create_brief,
+    detection_rows_for_pair,
     get_brief,
     latest_validated_brief,
+    mark_failed,
     mark_rejected,
     persist_validated,
 )
@@ -57,11 +59,15 @@ def _seed_job(session: Session, aoi_id: int) -> str:
 
 
 def _detection(i: int) -> Detection:
+    return _detection_with_area(i, 20_000.0)
+
+
+def _detection_with_area(i: int, area_m2: float) -> Detection:
     lo = 76.91 + i * 0.01
     return Detection(
         geometry=box(lo, 8.31, lo + 0.005, 8.315),
         epsg=4326,
-        area_m2=20_000.0,
+        area_m2=area_m2,
         change_type=ChangeType.CONSTRUCTION,
         magnitude=0.5,
         confidence=0.9,
@@ -226,3 +232,53 @@ def test_replace_detections_leaves_other_pairs_and_statuses_alone(db_session: Se
     )
     assert get_brief(db_session, rejected_same_pair.id).status == "rejected"
     assert get_brief(db_session, validated_other_pair.id).status == "validated"
+
+
+def test_mark_failed_sets_status_and_error(db_session: Session) -> None:
+    aoi_id, before_id, after_id = _seed_pair(db_session)
+    brief = create_brief(
+        db_session, aoi_id=aoi_id, before_scene_id=before_id, after_scene_id=after_id
+    )
+    mark_failed(db_session, brief.id, code="anthropic_auth", message="bad key")
+    got = get_brief(db_session, brief.id)
+    assert got.status == "failed"
+    assert isinstance(got.error, dict)
+    assert got.error["code"] == "anthropic_auth"
+    assert got.error["message"] == "bad key"
+
+
+def test_detection_rows_for_pair_orders_by_area_desc(db_session: Session) -> None:
+    aoi_id, before_id, after_id = _seed_pair(db_session)
+    # Insertion order deliberately differs from sorted order, so a query missing
+    # (or flipping) ORDER BY area_m2 DESC would return rows out of the asserted sequence.
+    areas = [6_200.0, 18_200.0, 12_000.0]
+    job_id = _seed_job(db_session, aoi_id)
+    dets = [_detection_with_area(i, area) for i, area in enumerate(areas)]
+    replace_detections(
+        db_session,
+        aoi_id=aoi_id,
+        job_id=job_id,
+        before_scene_id=before_id,
+        after_scene_id=after_id,
+        detections=dets,
+    )
+
+    # A detection on a *different* scene pair under the same AOI must not leak in.
+    other_before, other_after = _seed_scene(db_session, aoi_id), _seed_scene(db_session, aoi_id)
+    other_job_id = _seed_job(db_session, aoi_id)
+    replace_detections(
+        db_session,
+        aoi_id=aoi_id,
+        job_id=other_job_id,
+        before_scene_id=other_before,
+        after_scene_id=other_after,
+        detections=[_detection_with_area(0, 99_999.0)],
+    )
+
+    rows = detection_rows_for_pair(
+        db_session, aoi_id=aoi_id, before_scene_id=before_id, after_scene_id=after_id
+    )
+    result_areas = [row.area_m2 for row in rows]
+    assert result_areas == [18_200.0, 12_000.0, 6_200.0]
+    assert all(a > b for a, b in zip(result_areas, result_areas[1:], strict=False))
+    assert 99_999.0 not in result_areas
