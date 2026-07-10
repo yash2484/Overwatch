@@ -12,6 +12,7 @@ from shapely.geometry import Polygon
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, aliased
 
+from overwatch.db.briefs import mark_stale_briefs
 from overwatch.db.models import DetectionEvent, Scene
 from overwatch.detection.models import Detection
 from overwatch.geodesy import to_wgs84
@@ -26,6 +27,12 @@ def replace_detections(
     after_scene_id: int,
     detections: list[Detection],
 ) -> int:
+    # Demote validated briefs over this exact pair before the detections they cite
+    # are deleted below — same transaction, so a rolled-back replace-set never leaves
+    # a brief falsely marked stale.
+    mark_stale_briefs(
+        session, aoi_id=aoi_id, before_scene_id=before_scene_id, after_scene_id=after_scene_id
+    )
     session.execute(
         delete(DetectionEvent).where(
             DetectionEvent.aoi_id == aoi_id,
