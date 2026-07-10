@@ -3,7 +3,7 @@
 > Living session-state file. Convention: nothing is "done" until it's in **Built & verified** with a note on *how* it was verified.
 
 ## Current phase
-Phase 3 — Detection persistence + API + jobs: **complete and verified** (2026-07-09), all 12 tasks executed on branch `phase-3-persistence-api-jobs`. Verification gate passed live in-container; evidence in the plan's "Verification Gate — evidence" section. Awaiting user merge via GitHub PR (compare: https://github.com/yash2484/Overwatch/compare/main...phase-3-persistence-api-jobs). Next: Phase 4 — Briefs + evidence chain.
+Phase 4 — Briefs + evidence chain: **design/brainstorm in progress** (2026-07-10). Phase 3 merged to main via PR #7 (`3e1097f`, 2026-07-09); merge verified byte-identical to branch tip `5cf599d`, local main synced, stale branch deleted. CI on the merge commit not yet confirmed green — `gh` is installed (2.96.0) but needs `gh auth login` before it can query Actions.
 
 ## Last verified working
 Phase 3 full pipeline (2026-07-09, in-container): `POST /aois/vizhinjam/jobs` → **HTTP 202** → Celery chain walks `ingest_before → ingest_after → detect` → **succeeded in 463 s with 12 detection polygons** in PostGIS. Queryable by spatial predicate (`ST_Intersects` bbox → 12 features, largest 18,200 m²; disjoint bbox → 0). Re-run of the identical windows selected the same scene pair and left **12 rows, zero duplicates** (pks 37…→49…, proving replace-set deleted+reinserted). Failure path: unreachable STAC → attempts climb 0→2→4 then structured `task_failed`; pre-Sentinel-2 window → fast-fail `no_usable_scene` at attempts=1. Beat: daily 03:00 crontab, due-selection baselines on the last after-scene and stamps `last_checked_at`. **117 tests + ruff check + ruff format green.**
@@ -56,11 +56,11 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
   12. **Live gate:** API submit → 12 detections on the real Vizhinjam 2021→2025 pair (463 s); spatial query returns them, disjoint bbox returns 0; re-run → same pair, 12 rows, **zero duplicates** (pks replaced); unreachable STAC → attempts 0→2→4 → `task_failed`; pre-Sentinel-2 window → `no_usable_scene` at attempts=1. **117 tests + ruff green.**
 
 ## In progress
-- Nothing (Phase 3 branch awaiting user merge).
+- Phase 4 design/brainstorm: Briefs + evidence chain. `BriefGenerator` (Anthropic API) narrating over stored detections only; validator rejecting any claim without ≥1 evidence link, bounded regeneration (3 attempts), `rejected` status surfaced. Creates `briefs`/`brief_claims`/`evidence_links` (deferred from Phase 3 by design). **Anthropic key enters `.env` here — user provides, never committed.**
 
 ## Next up
-- User: open/merge the Phase 3 PR (CI re-runs on the PR via `pull_request` trigger; verify green before merging).
-- Phase 4 (fresh session): Briefs + evidence chain. `BriefGenerator` (Anthropic API) narrating over stored detections only; validator rejecting any claim without ≥1 evidence link, bounded regeneration (3 attempts), `rejected` status surfaced. Creates `briefs`/`brief_claims`/`evidence_links` (deferred from Phase 3 by design). **Anthropic key enters `.env` here — user provides, never committed.**
+- User: `gh auth login`, then confirm CI green on merge commit `3e1097f` (`gh run list --branch main --limit 3`).
+- Phase 4 design spec → plan → execution on branch `phase-4-briefs-evidence`.
 
 ## Open decisions
 - Exact GDELT endpoint/theme identifiers — deferred to the Phase 5 API spike (deliberate).
@@ -68,7 +68,7 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
 
 ## Known issues / deviations
 - `python:3.12-slim` needs `libexpat1` via apt for rasterio's bundled GDAL — handled in `backend/Dockerfile`, plan updated to match.
-- `gh` CLI not installed — PR flow runs via GitHub UI (user merges); CI status checked read-only via Actions API with the stored git credential. Consider installing `gh`.
+- `gh` CLI installed 2026-07-10 (2.96.0, `C:\Program Files\GitHub CLI\gh.exe` — not yet on this session's PATH; invoke by full path or new terminal) but **unauthenticated**: user must run `gh auth login` before CI/PR queries work.
 - Direct push to main is denied by permission settings — every phase ends with a branch push + compare URL for the user to merge.
 - 2026-07-03: accidental "revert PR" on GitHub was closed unmerged; leftover `revert-1-phase-0-scaffold` branch deleted from origin. Main history is clean.
 - numpy 2.5 `DeprecationWarning` surfaces via `rasterio.windows` (harmless; will break on a future numpy — watch rasterio releases). rasterio also logs "boto3 not available, DummySession" INFO noise on HTTPS reads (cosmetic).
