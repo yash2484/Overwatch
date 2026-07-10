@@ -154,21 +154,44 @@ def test_rejection_after_max_attempts_records_three_unlinked_claim_violations(
 def test_transient_error_retries_then_fails(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Transient errors burn all retries (attempts 1 -> 4), then land a structured failure.
+
+    `get_brief_generator` is monkeypatched to return the SAME `BrokenGenerator` instance on
+    every call (a shared closure, not a fresh instance per call) — in eager mode
+    (`.apply()`), `autoretry_for` re-runs the whole task body in-process on each retry, so
+    `get_brief_generator()`/`.generate()` fire once per attempt. A shared instance lets a
+    call counter prove all 1 + max_retries(3) = 4 attempts actually happened, not just that
+    the terminal row landed on "failed" (which `BriefTask.on_failure` would also write if
+    retries never fired at all, e.g. `autoretry_for` deleted or `max_retries=0`).
+    """
+
     class BrokenGenerator:
+        def __init__(self) -> None:
+            self.call_count = 0
+
         def generate(self, request, failures):
+            self.call_count += 1
             raise TransientBriefError("rate limited")
 
     brief_id, _det_ids = _seed_brief(db_session)
-    monkeypatch.setattr(tasks, "get_brief_generator", lambda: BrokenGenerator())
+    broken = BrokenGenerator()
+    monkeypatch.setattr(tasks, "get_brief_generator", lambda: broken)
 
     result = tasks.generate_brief.apply(args=(brief_id,))
     assert result.state == "FAILURE"
     assert isinstance(result.result, TransientBriefError)
+    assert broken.call_count == 4  # 1 initial + max_retries(3) — retries are visible while polling
 
     db_session.expire_all()
     brief = get_brief(db_session, brief_id)
     assert brief.status == "failed"
     assert brief.error["code"] == "task_failed"
+
+
+def test_retry_policy_is_configured() -> None:
+    assert TransientBriefError in tasks.generate_brief.autoretry_for
+    assert tasks.generate_brief.max_retries == 3
+    assert tasks.generate_brief.retry_backoff is True
 
 
 def test_permanent_error_fails_fast_no_retry(
