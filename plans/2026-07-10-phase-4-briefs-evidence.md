@@ -798,8 +798,8 @@ def generate_brief(self: Task, brief_id: int) -> None:
 **Files:**
 - Modify: `PROGRESS.md`, `plans/2026-07-10-phase-4-briefs-evidence.md` (append evidence), `CONTEXT.md` (if new gotchas)
 
-- [ ] **Step 1: Full suite + lint in-container** — `pytest -q`, `ruff check .`, `ruff format --check .` → record counts.
-- [ ] **Step 2: User provides the Anthropic key** → user adds `OVERWATCH_ANTHROPIC_API_KEY=...` to `.env` (never via chat, never committed) → `docker compose restart api worker beat`.
+- [x] **Step 1: Full suite + lint in-container** — `pytest -q` → **187 passed**; `ruff check .` clean; `ruff format --check .` → 98 files formatted; `alembic current` → `0003 (head)`; `generate_brief` registered in worker. (2026-07-11)
+- [ ] **Step 2: User provides the Anthropic key** — PENDING (no `.env` yet) → user adds `OVERWATCH_ANTHROPIC_API_KEY=...` to `.env` (never via chat, never committed) → `docker compose restart api worker beat`.
 - [ ] **Step 3: Live happy path** — `POST /aois/vizhinjam/briefs {}` → 202; poll `GET /briefs/{id}` to `validated`; record headline + claims. SQL proof every link resolves to the exact pair:
 
 ```sql
@@ -816,11 +816,41 @@ WHERE b.id = <brief_id> AND d.id IS NULL;
 
 - [ ] **Step 4: Rejected path surfaced** — confirm a rejected brief (from the Task 7 test DB run or a live forced run) returns violations via `GET /briefs/{id}`.
 - [ ] **Step 5: Staleness live** — re-submit the detection job for the same windows (Phase 3 flow) → after it succeeds, the validated brief's status is `stale`; generate a fresh brief against the new rows → `validated`.
-- [ ] **Step 6: Hygiene** — `git grep -iI "sk-ant"` → empty; `git status` shows `.env` untracked.
-- [ ] **Step 7: Docs + push** — append evidence to this plan's "Verification Gate — evidence" section; update `PROGRESS.md` (Built & verified entry + Last verified working); `CONTEXT.md` for any new gotcha; commit `docs(phase-4): verification evidence`; push branch; give compare URL `https://github.com/yash2484/Overwatch/compare/main...phase-4-briefs-evidence`. CI green before asking for merge.
+- [x] **Step 6: Hygiene** — `git grep -iIn "sk-ant-api"` → empty; no `.env` in tree; only `.env.example` tracked. (2026-07-11)
+- [~] **Step 7: Docs + push** — docs done (this evidence section, PROGRESS.md, CONTEXT.md); branch pushed with compare URL below. Live-gate evidence + CI-green confirmation still pending the user's key. — append evidence to this plan's "Verification Gate — evidence" section; update `PROGRESS.md` (Built & verified entry + Last verified working); `CONTEXT.md` for any new gotcha; commit `docs(phase-4): verification evidence`; push branch; give compare URL `https://github.com/yash2484/Overwatch/compare/main...phase-4-briefs-evidence`. CI green before asking for merge.
 
 ---
 
 ## Verification Gate — evidence
 
-(Appended at Task 9 execution.)
+### Non-live gate (2026-07-11, in-container) — GREEN
+
+All commands `docker compose exec -T api …`:
+
+- **`pytest -q` → 187 passed**, 2 warnings in 11.7 s. Both warnings are pre-existing third-party deprecations, not Phase-4 code: Starlette/httpx `TestClient` deprecation and Alembic `path_separator` (surfaced by an unrelated Phase-1 idempotency test). Output otherwise pristine.
+- **`ruff check .` → All checks passed!**
+- **`ruff format --check .` → 98 files already formatted.**
+- **`alembic current` → `0003 (head)`** (briefs / brief_claims / evidence_links schema live).
+- **Worker registration:** `celery -A overwatch.workers.celery_app inspect registered` lists `overwatch.generate_brief` alongside the Phase-3 tasks — worker is on current code, no stale-image gotcha (CONTEXT.md "workers do not hot-reload"). The dispatch path (`POST → create_brief → commit → dispatch_brief`) has a live consumer.
+- **Hygiene:** `git grep -iIn "sk-ant-api"` → empty (no real key material tracked; the single `sk-ant` hit is this plan's Step-6 instruction text). No `.env` exists in the tree; only `.env.example` is tracked. `.env` is gitignored.
+
+### Whole-branch review (opus, base `3e1097f` → head `3835cd7`, 13 commits)
+
+Returned **✅ Ready to merge — no blockers.** Security-boundary analysis confirmed the three-gate validator holds end-to-end across `prompt → generator → loop → validator → persist`: no path persists a non-tracing, wrong-recognized-unit-area, or wrong-date claim as `validated`; the DB FK + `ck_evidence_links_detection_id` CHECK backstop persistence. The two `mark_failed` functions (jobs vs briefs) are cleanly wired to their own tables. Eight Minor findings triaged as defer.
+
+**Deferred to Phase 5 (documented, not blockers):**
+- **[Important] Gate 3 fails *open* on unrecognized area units** — an `observed` claim quoting an area in a unit `_AREA_RE` can't convert (acres, "sq km", "square miles") is not cross-checked and validates. Real risk is low (the system prompt mandates m² and this is a false-negative requiring the model to disobey), but it is a hole in the phase's headline guarantee. A complete impl-only patch (bounded unrecognized-unit regex, reusing `area_mismatch`, fail-closed) was drafted but **not shipped** — it has no tests and was out of scope for this push; it lives in `git stash` (`stash@{0}`, message contains "Gate3 unrecognized-area-unit"). Phase 5 validator-hardening should complete it TDD-first.
+- Percentages / bare numbers in `observed` claims are not cross-checked (Gate 3 scoped to areas + dates by design).
+- Explicit (before, after) scene ids in the POST body that don't exist hit the scenes FK at `create_brief` flush → unhandled `IntegrityError` → 500 instead of a clean 4xx. Needs an ownership-semantics decision (404 vs 422, validate AOI membership).
+- No blank-`headline` structural check (a blank headline with fully-traced claims is still honest; adding a code expands the frozen violation vocabulary — deferred deliberately).
+- Permanent-failure path drops `usage`/`attempts` from the persisted record.
+
+### Live gate (Steps 2–5) — PENDING user's Anthropic key
+
+Requires `OVERWATCH_ANTHROPIC_API_KEY` in `.env`, which per the credential rule the user enters directly (never via chat, never committed). No `.env` exists yet. Once the key is in place and `docker compose restart api worker beat` has run, the remaining empirical proofs are:
+
+1. **Live happy path** — `POST /aois/vizhinjam/briefs {}` → 202 → poll `GET /briefs/{id}` to `validated`; record headline + claims; run the Step-3 SQL (expect `0` orphan links, proving every evidence link resolves to the exact `(aoi, before_scene, after_scene)` pair).
+2. **Rejected path** — surface a `rejected` brief's violations via `GET /briefs/{id}`.
+3. **Staleness live** — re-run the detection job for the same windows → the validated brief flips to `stale`; a fresh brief against the new rows → `validated`.
+
+CI must be green on the branch before merge.
