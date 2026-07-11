@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     fusion_enabled: bool = True
     max_aoi_km2: float = 500.0  # design spec §6 — reject larger AOIs at the API
+    anthropic_model: str = "claude-opus-4-8"  # design spec §3; override for cost via env
+    brief_max_attempts: int = 3  # design spec §4 — bounded regeneration
+    brief_max_prompt_detections: int = 50  # design spec §3 — prompt cap, truncation logged
 
 
 settings = Settings()

@@ -34,3 +34,27 @@ def test_jobs_cascade_from_aois(migrated_db: None) -> None:
             )
         ).all()
     assert rows and rows[0].confdeltype == "c"  # ON DELETE CASCADE
+
+
+def test_briefs_tables_exist(migrated_db: None) -> None:
+    insp = inspect(get_engine())
+    for table in ("briefs", "brief_claims", "evidence_links"):
+        assert insp.has_table(table), f"missing table {table}"
+    brief_cols = {c["name"] for c in insp.get_columns("briefs")}
+    assert {
+        "id",
+        "aoi_id",
+        "before_scene_id",
+        "after_scene_id",
+        "status",
+        "attempts",
+        "headline",
+        "model",
+        "usage",
+        "violations",
+        "error",
+        "created_at",
+        "updated_at",
+    } <= brief_cols
+    link_cols = {c["name"] for c in insp.get_columns("evidence_links")}
+    assert {"claim_id", "evidence_type", "detection_id"} <= link_cols

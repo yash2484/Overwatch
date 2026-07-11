@@ -12,10 +12,10 @@
 3. Work on a branch `phase-N-<slug>`. Execute with `superpowers:executing-plans` (or subagent-driven), TDD where the plan says so, commit per task.
 4. All Python runs **in-container** (`docker compose exec api pytest -v`, etc.). Never install project deps on the Windows host.
 5. Gate with `superpowers:verification-before-completion`, update `PROGRESS.md` with evidence, push the branch.
-6. **The user merges to main via GitHub PR** — direct push to main is denied by permission settings, and `gh` CLI is not installed; give the user the compare URL: `https://github.com/yash2484/Overwatch/compare/main...<branch>`.
+6. **The user merges to main via GitHub PR** — direct push to main is denied by permission settings; give the user the compare URL: `https://github.com/yash2484/Overwatch/compare/main...<branch>`. `gh` CLI is installed as of 2026-07-10 (`C:\Program Files\GitHub CLI\gh.exe` — full path needed in stale shells) but requires the user to run `gh auth login` once before CI/PR queries work.
 7. CI must be green before asking for merge (workflow: backend ruff+pytest, frontend tsc+build). If CI needs to run pre-merge, note the PR trigger already covers pull requests.
 
-**Environment quirks (verified 2026-07-02):** no `gh`, no `rtk`, PowerShell tool unavailable (use Git Bash); `$TMPDIR` unset — use the session scratchpad for log redirection; Actions API reachable with `git credential fill` token (read-only, never print it).
+**Environment quirks (updated 2026-07-10):** no `rtk`, PowerShell tool unavailable (use Git Bash); `$TMPDIR` unset — use the session scratchpad for log redirection; `gh` installed but needs one-time `gh auth login` by the user; harvesting the `git credential fill` token for API calls is blocked by the permission classifier — use `gh` (once authed) for CI status.
 
 ---
 
@@ -65,19 +65,21 @@
 ## Phase 4 — Briefs + evidence chain
 
 **Goal:** the trust architecture — LLM narrates over stored detections only.
-**Deliverables:** `BriefGenerator` (Anthropic API, structured detections in, claims out with evidence-link IDs); validator rejecting any claim without ≥1 evidence link, bounded regeneration (3 attempts) with structured feedback, `rejected` status surfaced; evidence-link table wiring (claim → detection).
-**Gate:** brief generated for Vizhinjam with every claim's links resolving; **negative test:** a deliberately unlinked claim is demonstrably rejected. Anthropic key enters `.env` here (user provides — never committed).
+**Design authority:** `design-specs/2026-07-10-phase-4-briefs-evidence-design.md` (approved 2026-07-10; supersedes the deliverable list below where they differ).
+**Deliverables:** `briefs`/`brief_claims`/`evidence_links` (migration 0003; claim-type enum carries the full Phase 5 set now); `BriefGenerator` protocol + Anthropic impl via `messages.parse` structured output (no prose parsing) + `FakeBriefGenerator` for CI; **three-gate validator** — linkage (ids resolve to the exact pair), context hygiene (no quantities in context claims), numeric consistency (quoted areas ±10% of linked `area_m2`, dates match the pair) — bounded regeneration (3 attempts) with structured feedback, `rejected` surfaced with per-attempt violations; brief lifecycle endpoints (submit 202/poll/latest-validated); **staleness fix**: detection replace-set flips validated briefs on that pair to `stale` (roadmap gap found in brainstorm).
+**Gate:** brief generated for Vizhinjam with every claim's links resolving (SQL join proof); **negative test:** a deliberately unlinked claim is demonstrably rejected; detection re-run flips the brief to `stale`. Anthropic key enters `.env` here (user provides — never committed; CI never needs it).
 
 ## Phase 5 — OSINT fusion (GDELT)
 
 **Goal:** persisted, deterministic news correlation (design spec §3 — the constrained fusion decision).
-**Order matters:** (1) **API spike first** — verify GDELT DOC 2.0 vs GEO 2.0 surface and theme taxonomy against real queries for the three AOIs; no integration code before the spike. (2) TDD the three-gate AND scorer (spatial ≤ 25 km buffer / temporal −30 d..+14 d / thematic per-vertical allowlist) as a pure function. (3) `NewsProvider` interface + Celery fusion task persisting passing articles. (4) Validator extension: article-only claims must use reported-speech framing.
+**Order matters:** (1) **API spike first** — verify GDELT DOC 2.0 vs GEO 2.0 surface and theme taxonomy against real queries for the three AOIs; no integration code before the spike. (2) TDD the three-gate AND scorer (spatial ≤ 25 km buffer / temporal −30 d..+14 d / thematic per-vertical allowlist) as a pure function. (3) `NewsProvider` interface + Celery fusion task persisting passing articles. (4) Validator extension: article-only claims must use reported-speech framing — **additive by design**: the brief validator's Gate-4 slot, the `reported`/`mixed` claim types, and `evidence_links.evidence_type='article'` already exist from Phase 4; this phase adds the `article_id` FK column (additive migration) and the framing gate. Carry Phase 4's prompt-size discipline (cap + aggregate stats, logged truncation) into article summarization.
 **Gate:** real correlated articles cited for ≥1 AOI; a deliberately irrelevant article rejected by the gates (negative test); `FUSION_ENABLED` kill-switch tested both ways.
 
 ## Phase 6 — Frontend arena
 
 **Goal:** the demo face — MapLibre GL + deck.gl.
 **Deliverables:** AOI draw tool, scene timeline, before/after slider, detection polygon overlays, brief panel with **click-to-evidence** (sentence click highlights detections on map; article citations open sources). Use the `frontend-design` skill — this is the flagship's face.
+**Backend contract already in place (Phase 4):** `GET /briefs/{id}` returns claims with evidence `detection_id`s, and the GeoJSON detections endpoint returns those ids on features — click-to-evidence is a client-side join by id; no backend rework expected.
 **Gate:** the <2-minute demo works end-to-end for all three showcase AOIs.
 
 ## Phase 7 — Polish

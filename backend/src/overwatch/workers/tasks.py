@@ -11,8 +11,26 @@ from typing import NoReturn
 
 from celery import Task, chain
 from geoalchemy2.shape import to_shape
+from sqlalchemy.orm import Session
 
+from overwatch.briefs.generator import (
+    AnthropicBriefGenerator,
+    BriefGenerator,
+    PermanentBriefError,
+    TransientBriefError,
+)
+from overwatch.briefs.loop import run_brief_loop
+from overwatch.briefs.models import BriefRequest, DetectionRow
+from overwatch.briefs.validator import validate_brief
+from overwatch.config import settings
 from overwatch.db.aois import list_aois, stamp_checked
+from overwatch.db.briefs import (
+    detection_rows_for_pair,
+    get_brief,
+    mark_rejected,
+    persist_validated,
+)
+from overwatch.db.briefs import mark_failed as mark_brief_failed
 from overwatch.db.detections import replace_detections
 from overwatch.db.engine import session_scope
 from overwatch.db.jobs import (
@@ -25,7 +43,7 @@ from overwatch.db.jobs import (
     set_scene,
     set_stage,
 )
-from overwatch.db.models import Aoi, Scene
+from overwatch.db.models import Aoi, Brief, Scene
 from overwatch.db.scenes import upsert_scene
 from overwatch.detection.detector import ClassicalChangeDetector
 from overwatch.detection.presets import VERTICAL_PRESETS
@@ -165,6 +183,109 @@ def run_detection(self: Task, job_id: str) -> None:
         )
         mark_succeeded(session, job_id, count)
     logger.info("job %s: %d detections persisted", job_id, count)
+
+
+class BriefTask(Task):
+    def on_failure(self, exc, task_id, args, kwargs, einfo) -> None:
+        brief_id = args[0] if args else kwargs.get("brief_id")
+        if brief_id is None:
+            return
+        with session_scope() as session:
+            mark_brief_failed(session, brief_id, code="task_failed", message=str(exc))
+
+
+_BRIEF_RETRY = {
+    "base": BriefTask,
+    "bind": True,
+    "autoretry_for": (TransientBriefError,),
+    "retry_backoff": True,
+    "retry_backoff_max": 600,
+    "retry_jitter": True,
+    "max_retries": 3,
+}
+
+
+def get_brief_generator() -> BriefGenerator:
+    """Module-level factory so tests can monkeypatch the generator."""
+    return AnthropicBriefGenerator()
+
+
+def dispatch_brief(brief_id: int) -> None:
+    generate_brief.delay(brief_id)
+
+
+def _build_brief_request(session: Session, brief: Brief) -> BriefRequest:
+    aoi = session.get(Aoi, brief.aoi_id)
+    before_scene = session.get(Scene, brief.before_scene_id)
+    after_scene = session.get(Scene, brief.after_scene_id)
+    rows = detection_rows_for_pair(
+        session,
+        aoi_id=brief.aoi_id,
+        before_scene_id=brief.before_scene_id,
+        after_scene_id=brief.after_scene_id,
+    )
+    return BriefRequest(
+        aoi_name=aoi.name,
+        aoi_slug=aoi.slug,
+        vertical=aoi.vertical,
+        before_scene_id=brief.before_scene_id,
+        after_scene_id=brief.after_scene_id,
+        before_date=before_scene.captured_at.date(),
+        after_date=after_scene.captured_at.date(),
+        detections=[
+            DetectionRow(
+                id=row.id,
+                change_type=row.change_type,
+                area_m2=row.area_m2,
+                magnitude=row.magnitude,
+                confidence=row.confidence,
+            )
+            for row in rows
+        ],
+    )
+
+
+@celery_app.task(name="overwatch.generate_brief", **_BRIEF_RETRY)
+def generate_brief(self: Task, brief_id: int) -> None:
+    with session_scope() as session:
+        brief = get_brief(session, brief_id)
+        if brief is None or brief.status != "generating":
+            return
+        request = _build_brief_request(session, brief)
+    try:
+        result = run_brief_loop(
+            get_brief_generator(),
+            request,
+            validate=validate_brief,
+            max_attempts=settings.brief_max_attempts,
+        )
+    except PermanentBriefError as exc:
+        with session_scope() as session:
+            mark_brief_failed(session, brief_id, code=exc.code, message=str(exc))
+        return
+    # TransientBriefError propagates -> Celery autoretry; on exhaustion BriefTask.on_failure
+    # marks the brief failed with code "task_failed".
+    with session_scope() as session:
+        if result.status == "validated":
+            persist_validated(
+                session,
+                brief_id,
+                headline=result.draft.headline,
+                claims=[(c.text, c.claim_type, c.evidence) for c in result.draft.claims],
+                model=result.model,
+                usage=result.usage,
+                attempts=result.attempts,
+                failures=[f.model_dump(mode="json") for f in result.failures],
+            )
+        else:
+            mark_rejected(
+                session,
+                brief_id,
+                failures=[f.model_dump(mode="json") for f in result.failures],
+                attempts=result.attempts,
+                model=result.model,
+                usage=result.usage,
+            )
 
 
 @celery_app.task(name="overwatch.enqueue_due_rechecks")

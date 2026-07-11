@@ -59,3 +59,12 @@ Through Phase 2 the `worker` and `beat` services only ever ran `overwatch.ping`,
 ## Docker/WSL2 requirement
 
 GDAL/rasterio on native Windows is a known tarpit (PROJECT.md §2.3) — the dev environment lives entirely in containers. Don't debug import/build errors on the host; reproduce inside `docker compose` first.
+
+## Anthropic brief generator: Opus 4.8 API constraints + deferred credential validation
+
+The Phase-4 `AnthropicBriefGenerator` (`backend/src/overwatch/briefs/generator.py`) has two non-obvious constraints, both discovered during Phase-4 execution against SDK `anthropic==0.116.0`:
+
+- **Opus 4.8 rejects sampling params.** Sending `temperature`, `top_p`, or `top_k` to `claude-opus-4-8` returns a **400**, not a silent ignore. The generator sends none of them. It uses structured output via `client.messages.parse(..., output_format=BriefDraft)` (read `.parsed_output`) and `thinking={"type": "adaptive"}` (the `budget_tokens` form is also rejected on this model). A refusal or a `None` `.parsed_output` is treated as a permanent failure (`brief_refused` / `brief_parse_failed`), not a crash.
+- **`anthropic.Anthropic(api_key=None)` does NOT raise** on this SDK version — credential validation is deferred to the first request, not the constructor (a "fact" I initially got wrong and the implementer corrected empirically). Consequence: constructing the client can't be your missing-key guard. The real guard is at the **API layer** — `POST /aois/{slug}/briefs` returns `422 briefs_unconfigured` when `settings.anthropic_api_key` is falsy, before any brief row is created. The generator itself maps `AuthenticationError` → `PermanentBriefError("anthropic_auth")` as a backstop. When adding new entry points that call the generator, replicate the settings-level key check; do not rely on client construction to fail.
+
+Standing rule: all 187+ tests run with `FakeBriefGenerator` / mocks, so **CI never needs the Anthropic key**. The key enters `.env` only for the live verification gate (user-supplied, never committed).

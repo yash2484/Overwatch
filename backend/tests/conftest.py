@@ -22,7 +22,14 @@ def migrated_db() -> None:
 
 @pytest.fixture()
 def clean_t3(migrated_db: None) -> Iterator[None]:
-    """Delete Phase-3 test rows (slug prefix t3-) after the test; cascades jobs/detections."""
+    """Delete Phase-3+ test rows (slug prefix t3-) after the test.
+
+    Deleting aois first cascades jobs/detections and (Phase 4) briefs -> brief_claims
+    -> evidence_links, since briefs.aoi_id is ondelete=CASCADE. scenes must be deleted
+    last: briefs.before/after_scene_id are ondelete=NO ACTION, so a scene delete would
+    fail while a brief still referenced it — by the time we get here, the aois delete
+    has already cascaded those briefs away.
+    """
     yield
     with session_scope() as session:
         session.execute(text("DELETE FROM aois WHERE slug LIKE 't3-%'"))

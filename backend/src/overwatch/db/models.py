@@ -8,6 +8,7 @@ from typing import Any
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -131,4 +132,64 @@ class DetectionEvent(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Brief(Base):
+    """One generated brief over a scene pair (Phase 4 design §2). Append-only history."""
+
+    __tablename__ = "briefs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    aoi_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("aois.id", ondelete="CASCADE"), nullable=False
+    )
+    before_scene_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("scenes.id"), nullable=False
+    )
+    after_scene_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("scenes.id"), nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    headline: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(Text)
+    usage: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    violations: Mapped[list[Any] | None] = mapped_column(JSONB)
+    error: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class BriefClaim(Base):
+    __tablename__ = "brief_claims"
+    __table_args__ = (UniqueConstraint("brief_id", "seq", name="uq_brief_claims_brief_seq"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    brief_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("briefs.id", ondelete="CASCADE"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    claim_type: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class EvidenceLink(Base):
+    __tablename__ = "evidence_links"
+    __table_args__ = (
+        CheckConstraint(
+            "evidence_type != 'detection' OR detection_id IS NOT NULL",
+            name="ck_evidence_links_detection_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    claim_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("brief_claims.id", ondelete="CASCADE"), nullable=False
+    )
+    evidence_type: Mapped[str] = mapped_column(Text, nullable=False)
+    detection_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("detections.id", ondelete="CASCADE")
     )

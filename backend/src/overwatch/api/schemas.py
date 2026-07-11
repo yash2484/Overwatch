@@ -54,3 +54,40 @@ class JobOut(BaseModel):
     error: dict[str, Any] | None
     created_at: datetime
     updated_at: datetime
+
+
+class BriefSubmit(BaseModel):
+    before_scene_id: int | None = None
+    after_scene_id: int | None = None
+
+    @model_validator(mode="after")
+    def _both_or_neither(self) -> "BriefSubmit":
+        has_before = self.before_scene_id is not None
+        has_after = self.after_scene_id is not None
+        if has_before != has_after:
+            raise ValueError("before_scene_id and after_scene_id must both be set or both omitted")
+        return self
+
+
+class ClaimOut(BaseModel):
+    seq: int
+    text: str
+    claim_type: str
+    detection_ids: list[int]
+
+
+class BriefOut(BaseModel):
+    id: int
+    aoi_slug: str
+    status: str
+    attempts: int
+    headline: str | None
+    model: str | None
+    usage: dict[str, Any]
+    violations: list[Any] | None
+    error: dict[str, Any] | None
+    before_scene_id: int
+    after_scene_id: int
+    claims: list[ClaimOut]
+    created_at: datetime
+    updated_at: datetime
