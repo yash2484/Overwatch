@@ -53,10 +53,20 @@ def test_structural_gates() -> None:
     )
     draft = BriefDraft(headline="H", claims=[ClaimDraft(text="  ", claim_type="context")])
     assert any(v.code == "blank_claim" for v in validate_brief(draft, _req()))
+    # SUPERSEDED BY PHASE 5: `reported` is no longer structurally rejected — Gate 4 (the
+    # observed/reported wall) polices it instead. This claim must STILL be rejected, but
+    # for the right reasons: it cites no article, and "News says so." is not
+    # reported-speech framing. Asserting more than the Phase-4 test did, not less.
     draft = BriefDraft(
         headline="H", claims=[ClaimDraft(text="News says so.", claim_type="reported")]
     )
-    assert any(v.code == "unsupported_claim_type" for v in validate_brief(draft, _req()))  # Phase 4
+    codes = {v.code for v in validate_brief(draft, _req())}
+    assert "unsupported_claim_type" not in codes
+    assert "unlinked_reported_claim" in codes
+    assert "observational_framing_on_reported_claim" in codes
+    # (A claim type outside the four is unreachable through BriefDraft — ClaimType is a
+    # Pydantic Literal, so the SDK schema rejects it at the API boundary. The validator's
+    # `unsupported_claim_type` branch remains as defence-in-depth for non-model callers.)
 
 
 def test_gate1_linkage() -> None:
