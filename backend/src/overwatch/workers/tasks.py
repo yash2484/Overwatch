@@ -1,8 +1,12 @@
-"""Detection job chain: ingest before → ingest after → detect (design doc §4).
+"""Detection job chain: ingest before → ingest after → detect → fuse (design doc §4, §5.6).
 
 Transient errors (network/STAC) retry with exponential backoff; permanent failures
 (no usable scene, coregistration mismatch) fail fast with a structured error on the
 job row. JobTask.on_failure guarantees no job is left 'running' after a terminal crash.
+
+`fuse` is the last link and the only one that leans on a third party we do not control, so
+it is both removable (`FUSION_ENABLED`) and unable to fail the job behind it — see the note
+above `_FUSION_RETRY`.
 """
 
 import logging
@@ -44,10 +48,19 @@ from overwatch.db.jobs import (
     set_stage,
 )
 from overwatch.db.models import Aoi, Brief, Scene
-from overwatch.db.news import articles_for_pair
+from overwatch.db.news import articles_for_pair, replace_articles
 from overwatch.db.scenes import upsert_scene
 from overwatch.detection.detector import ClassicalChangeDetector
 from overwatch.detection.presets import VERTICAL_PRESETS
+from overwatch.fusion.models import FusionWindow, GateResult, RawArticle
+from overwatch.fusion.presets import FUSION_PRESETS
+from overwatch.fusion.provider import (
+    GdeltDocProvider,
+    NewsProvider,
+    TransientFusionError,
+    build_query,
+)
+from overwatch.fusion.scorer import dedupe, score_article
 from overwatch.imagery.earth_search import EarthSearchProvider
 from overwatch.imagery.gating import MIN_USABLE_FRACTION, find_usable_scene
 from overwatch.imagery.harmonize import harmonize_window
@@ -74,12 +87,26 @@ def get_provider() -> ImageryProvider:
     return EarthSearchProvider()
 
 
+def get_news_provider() -> NewsProvider:
+    """Module-level factory so tests can monkeypatch the provider."""
+    return GdeltDocProvider()
+
+
 def dispatch_detection_job(job_id: str) -> None:
-    chain(
+    signatures = [
         ingest_scene.si(job_id, "before"),
         ingest_scene.si(job_id, "after"),
         run_detection.si(job_id),
-    ).apply_async()
+    ]
+    # The kill-switch. Fusion is the only stage that depends on a third party we do not
+    # control, so it must be removable without touching the pipeline that does the sensing.
+    if settings.fusion_enabled:
+        signatures.append(fuse.si(job_id))
+    chain(*signatures).apply_async()
+
+
+def dispatch_fusion_job(job_id: str) -> None:
+    fuse.delay(job_id)
 
 
 def _fail(job_id: str, code: str, message: str) -> NoReturn:
@@ -184,6 +211,109 @@ def run_detection(self: Task, job_id: str) -> None:
         )
         mark_succeeded(session, job_id, count)
     logger.info("job %s: %d detections persisted", job_id, count)
+
+
+# Deliberately NOT `base: JobTask`. By the time fusion runs, ingestion and detection have
+# already succeeded and `mark_succeeded` is on the job row — so `JobTask.on_failure`, which
+# calls `mark_failed`, would let a GDELT outage reach back and flip a genuinely succeeded
+# detection job to `failed`. A fusion failure must cost exactly one thing: a brief with no
+# news section.
+_FUSION_RETRY = {
+    "bind": True,
+    "autoretry_for": (TransientFusionError,),
+    "retry_backoff": True,
+    "retry_backoff_max": 600,
+    "retry_jitter": True,
+    "max_retries": 3,
+}
+
+# Domain preference for syndication dedup — wires rank above the outlets that carry them.
+_DOMAIN_RANK = [
+    "reuters.com",
+    "apnews.com",
+    "bbc.co.uk",
+    "thehindu.com",
+    "thehindubusinessline.com",
+    "news.mongabay.com",
+    "riotimesonline.com",
+    "usnews.com",
+    "yahoo.com",
+]
+
+
+@celery_app.task(name="overwatch.fuse", **_FUSION_RETRY)
+def fuse(self: Task, job_id: str) -> int:
+    """Correlate news against this job's scene pair (Phase 5 design §6). Returns the count.
+
+    Retrieval is GDELT-side and STRICT (the full-text place term). The three gates —
+    toponym, temporal, thematic — are ours, pure, and ANDed, so an article must clear all
+    three to be cited. Gate 1 is a TOPONYM gate, not a spatial one: GDELT exposes no
+    article geotag, and its geocoder is centroid-based (design §2.4).
+    """
+    with session_scope() as session:
+        job = get_job(session, job_id)
+        if job is None or job.before_scene_id is None or job.after_scene_id is None:
+            raise JobFailure(f"job {job_id} has no scene pair to anchor fusion on")
+        aoi = session.get(Aoi, job.aoi_id)
+        aoi_id, vertical, slug = aoi.id, aoi.vertical, aoi.slug
+        place_terms = list(aoi.place_terms or [])
+        region_terms = list(aoi.region_terms or [])
+        before_id, after_id = job.before_scene_id, job.after_scene_id
+        before_captured_at = session.get(Scene, before_id).captured_at
+        after_captured_at = session.get(Scene, after_id).captured_at
+
+    if not place_terms:
+        logger.info("fusion skip %s: no place_terms configured on the AOI", slug)
+        return 0
+
+    preset = FUSION_PRESETS[vertical]
+    # The CAPPED INTERVAL, anchored on BOTH scenes (design decision 3, revised). Anchoring
+    # on the after-scene alone returned ZERO articles for the forest AOI on a live query:
+    # coverage lands when the change happens, not when we got around to looking.
+    window = FusionWindow.around(before_captured_at, after_captured_at, preset)
+    query = build_query(place_terms[0], preset)  # STRICT term — full text, GDELT-side
+
+    candidates = get_news_provider().search(query, window.start, window.end)
+
+    scored: list[tuple[RawArticle, GateResult]] = []
+    for candidate in candidates:
+        gates = score_article(
+            candidate,
+            place_terms=place_terms,
+            region_terms=region_terms,
+            window=window,
+            preset=preset,
+            languages=settings.fusion_languages,
+        )
+        if gates.passed:
+            scored.append((candidate, gates))
+
+    # Dedup AFTER the gates: a syndicated copy that never passed them is not a duplicate to
+    # suppress, it is an article we rejected outright.
+    survivors = dedupe([article for article, _ in scored], domain_rank=_DOMAIN_RANK)
+    gates_by_url = {article.url: gates for article, gates in scored}
+    admitted = [
+        (article, gates_by_url[article.url], suppressed, query) for article, suppressed in survivors
+    ]
+
+    with session_scope() as session:
+        count = replace_articles(
+            session,
+            aoi_id=aoi_id,
+            job_id=job_id,
+            before_scene_id=before_id,
+            after_scene_id=after_id,
+            admitted=admitted,
+        )
+    logger.info(
+        "job %s: %d/%d candidates admitted for %s (query=%s)",
+        job_id,
+        count,
+        len(candidates),
+        slug,
+        query,
+    )
+    return count
 
 
 class BriefTask(Task):
