@@ -20,20 +20,27 @@ def migrated_db() -> None:
     command.upgrade(cfg, "head")
 
 
+# Every prefix the test suite seeds under. A prefix missing from this list is a slow leak:
+# its rows are never cleaned, they pile up in the shared dev database, and `list_aois` (the
+# beat task's due-recheck sweep) will eventually iterate over them as if they were real.
+_TEST_SLUG_PREFIXES = ("t3-", "t5-")
+
+
 @pytest.fixture()
 def clean_t3(migrated_db: None) -> Iterator[None]:
-    """Delete Phase-3+ test rows (slug prefix t3-) after the test.
+    """Delete Phase-3+ test rows (slug prefixes in `_TEST_SLUG_PREFIXES`) after the test.
 
     Deleting aois first cascades jobs/detections and (Phase 4) briefs -> brief_claims
-    -> evidence_links, since briefs.aoi_id is ondelete=CASCADE. scenes must be deleted
-    last: briefs.before/after_scene_id are ondelete=NO ACTION, so a scene delete would
-    fail while a brief still referenced it — by the time we get here, the aois delete
-    has already cascaded those briefs away.
+    -> evidence_links, since briefs.aoi_id is ondelete=CASCADE. (Phase 5) news_articles
+    cascade the same way. scenes must be deleted last: briefs.before/after_scene_id are
+    ondelete=NO ACTION, so a scene delete would fail while a brief still referenced it —
+    by the time we get here, the aois delete has already cascaded those briefs away.
     """
     yield
     with session_scope() as session:
-        session.execute(text("DELETE FROM aois WHERE slug LIKE 't3-%'"))
-        session.execute(text("DELETE FROM scenes WHERE aoi_slug LIKE 't3-%'"))
+        for prefix in _TEST_SLUG_PREFIXES:
+            session.execute(text("DELETE FROM aois WHERE slug LIKE :p"), {"p": f"{prefix}%"})
+            session.execute(text("DELETE FROM scenes WHERE aoi_slug LIKE :p"), {"p": f"{prefix}%"})
 
 
 @pytest.fixture()
