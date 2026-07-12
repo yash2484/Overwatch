@@ -18,6 +18,11 @@ dist/
 Thumbs.db
 .serena/
 
+# Local machine config, not project code. `.wslconfig.proposed` is a parked, ready-to-copy
+# WSL2 memory cap (see the header inside it) — apply it after v1 by copying to
+# %USERPROFILE%\.wslconfig. Machine-specific, so it never belongs in the tree.
+.wslconfig*
+
 # Local data artifacts (rasters land here in Phase 1)
 data/
 *.tif
