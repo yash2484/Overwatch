@@ -19,19 +19,36 @@ def upsert_aoi(
     vertical: str,
     geometry: Polygon,
     cadence_days: int | None = None,
+    place_terms: list[str] | None = None,
+    region_terms: list[str] | None = None,
 ) -> int:
     """Insert or update by slug; returns the stable row id.
 
-    Re-seeding refreshes name/vertical/geom but never clobbers cadence_days or
-    last_checked_at (user-owned scheduling state).
+    Re-seeding refreshes name/vertical/geom and the toponym terms, but never clobbers
+    cadence_days or last_checked_at (user-owned scheduling state).
     """
     geom = from_shape(geometry, srid=4326)
     stmt = (
         insert(Aoi)
-        .values(slug=slug, name=name, vertical=vertical, geom=geom, cadence_days=cadence_days)
+        .values(
+            slug=slug,
+            name=name,
+            vertical=vertical,
+            geom=geom,
+            cadence_days=cadence_days,
+            place_terms=place_terms,
+            region_terms=region_terms,
+        )
         .on_conflict_do_update(
             index_elements=["slug"],
-            set_={"name": name, "vertical": vertical, "geom": geom, "updated_at": func.now()},
+            set_={
+                "name": name,
+                "vertical": vertical,
+                "geom": geom,
+                "place_terms": place_terms,
+                "region_terms": region_terms,
+                "updated_at": func.now(),
+            },
         )
         .returning(Aoi.id)
     )
