@@ -173,12 +173,39 @@ why the strict term is enforced at the retrieval layer instead. See §4.1.
 2. **Conjunctive at two layers.** Retrieval enforces the strict place term against GDELT's full-text index (which sees
    more than we do); the pure scorer corroborates against what the record actually exposes. Both layers are AND-shaped.
    Neither alone is trusted. See §4.
-3. **Temporal window anchors on the after-scene**, not the detection window. The inherited definition
-   (`[window start − 30 d, window end + 14 d]`) is near-vacuous: change-detection pairs span months to years — Vizhinjam's
-   pair is ~3 years apart, making the "gate" ~3 years wide. New definition:
-   **`[after_scene.captured_at − 30 d, after_scene.captured_at + 14 d]`** — a ~44-day band around when the change was
-   actually observed. Bounds live in the per-vertical preset configs (same pattern as Phase 2's min-area thresholds), so
-   they are tunable, not hardcoded. *A two-tier proximate/contextual window is explicitly deferred to v0.2.*
+3. **Temporal window = CAPPED INTERVAL.** ⚠️ **Revised during execution (2026-07-12).** The first two formulations were
+   both wrong, and each was killed by real data — the second one by a live query, *after* it had passed design review.
+
+   - **The inherited spec** (`[before_scene − 30 d, after_scene + 14 d]`) is near-vacuous. Vizhinjam's **real** pair
+     spans **1,460 days**, so the "gate" was a ~4-year window that accepted almost anything.
+   - **After-scene-anchored** (a 44-day band) fixed that — and **broke the forest AOI**. Novo Progresso's **real** pair
+     is `2023-07-30 → 2024-07-24`, putting the band at `2024-06-24 … 2024-08-07`. A **live GDELT query over that exact
+     window returned ZERO articles.** All four demo articles (Aug–Sep 2023) sit ~11 months earlier. The best fusion
+     story in the project would have shipped with no news section at all.
+   - **Why:** deforestation coverage lands **when the clearing happens** — spread across the observation interval, not
+     clustered near the after-scene. The after-scene is when *we looked*, not when *it happened*.
+
+   **Final definition** — admit news from the *observation interval*, but **cap** it so a multi-year baseline cannot
+   become a multi-year news sweep:
+
+   ```
+   start = max(before_scene.captured_at, after_scene.captured_at − max_lookback_days) − lead_days
+   end   = after_scene.captured_at + lag_days
+   ```
+
+   `lead_days=30`, `lag_days=14`, `max_lookback_days=400` — all per-vertical presets (same discipline as Phase 2's
+   min-area thresholds): tunable, never hardcoded at the call site. Verified against **all three real pairs**:
+
+   | AOI | Real pair (gap) | Resulting window | Outcome |
+   |---|---|---|---|
+   | Novo Progresso | 2023-07-30 → 2024-07-24 (360 d) | 2023-06-30 … 2024-08-07 | **admits the Aug-2023 stories** |
+   | Vizhinjam | 2021-02-12 → 2025-02-11 (1,460 d) | 2023-12-09 … 2025-02-25 | **~14 months, not 4 years** — the cap is the anti-vacuity guard |
+   | Porto Alegre | 2024-04-18 → 2024-05-21 (33 d) | 2024-03-19 … 2024-06-04 | tight, because the event was |
+
+   This keeps what each earlier formulation got right: **bounded** *and* **covering the interval where the change
+   actually accrued**. The tests derive their windows from the real pairs via `FusionWindow.around()` rather than
+   hand-inventing dates — hand-invented dates are exactly what let this bug survive design review.
+   *A two-tier proximate/contextual window remains deferred to v0.2.*
 4. **Schema: `news_articles` + additive `evidence_links.article_id`** (migration 0004). Phase 4 already shipped the
    polymorphic `evidence_type` and the `reported`/`mixed` claim types, so this phase adds one FK column and one table —
    no rework. AOIs gain `place_terms` / `region_terms` text arrays.
@@ -223,8 +250,10 @@ Rondônia-only story; that story would never have been retrieved.
 1. **Toponym gate.** The normalized title contains ≥1 of the AOI's `place_terms` ∪ `region_terms`.
    Normalization: casefold, strip diacritics (`Pará` → `para`, `Amazônia` → `amazonia`), collapse whitespace,
    match on word boundaries (so "Para" does not match "Paraguay").
-2. **Temporal gate.** `seendate` ∈ `[after_scene.captured_at − lead_days, after_scene.captured_at + lag_days]`.
-   Defaults `lead_days=30`, `lag_days=14`, per-vertical in the preset.
+2. **Temporal gate.** `seendate` ∈ the **capped observation interval** (decision 3, revised):
+   `[max(before_scene, after_scene − max_lookback_days) − lead_days, after_scene + lag_days]`.
+   Inclusive on both bounds. Defaults `lead_days=30`, `lag_days=14`, `max_lookback_days=400`, per-vertical in the preset.
+   Built by `FusionWindow.around(before_captured_at, after_captured_at, preset)` — never hand-assembled at a call site.
 3. **Thematic gate.** The normalized title contains ≥1 of the vertical's keyword allowlist (stem-matched):
    - **port:** `port, seaport, terminal, berth, shipping, cargo, container, harbour, harbor, vessel, transshipment`
    - **forest:** `deforest, desmatamento, logging, clearing, cleared, forest, rainforest, illegal`
