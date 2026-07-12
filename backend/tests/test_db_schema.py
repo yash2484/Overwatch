@@ -58,3 +58,42 @@ def test_briefs_tables_exist(migrated_db: None) -> None:
     } <= brief_cols
     link_cols = {c["name"] for c in insp.get_columns("evidence_links")}
     assert {"claim_id", "evidence_type", "detection_id"} <= link_cols
+
+
+def test_news_articles_table_and_natural_key(migrated_db: None) -> None:
+    insp = inspect(get_engine())
+    assert insp.has_table("news_articles")
+    cols = {c["name"] for c in insp.get_columns("news_articles")}
+    assert {
+        "id",
+        "aoi_id",
+        "job_id",
+        "after_scene_id",
+        "url",
+        "title",
+        "domain",
+        "language",
+        "seendate",
+        "gates_passed",
+        "query",
+        "meta",
+        "created_at",
+    } <= cols
+    # No geometry column: GDELT exposes no article geotag (Phase 5 design §2.2).
+    assert "geom" not in cols
+    uniques = {tuple(u["column_names"]) for u in insp.get_unique_constraints("news_articles")}
+    assert ("aoi_id", "after_scene_id", "url") in uniques
+
+
+def test_aois_have_toponym_term_arrays(migrated_db: None) -> None:
+    insp = inspect(get_engine())
+    cols = {c["name"] for c in insp.get_columns("aois")}
+    assert {"place_terms", "region_terms"} <= cols
+
+
+def test_evidence_links_article_id_and_check(migrated_db: None) -> None:
+    insp = inspect(get_engine())
+    cols = {c["name"] for c in insp.get_columns("evidence_links")}
+    assert "article_id" in cols
+    checks = {c["name"] for c in insp.get_check_constraints("evidence_links")}
+    assert "ck_evidence_links_article_id" in checks
