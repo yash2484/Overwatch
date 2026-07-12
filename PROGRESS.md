@@ -75,10 +75,17 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
 - User: add the Anthropic key to `.env`, restart api/worker/beat → drive the live gate (Steps 2–5).
 - User: `gh auth login`, then confirm CI green on branch `phase-4-briefs-evidence` and merge commit `3e1097f` (`gh run list --limit 3`).
 - Merge `phase-4-briefs-evidence` → main (compare URL in known-issues) once live gate + CI are green.
-- Phase 5: validator hardening — complete the stashed Gate-3 unrecognized-unit patch TDD-first; percentages/bare-number cross-check; explicit-scene-id 4xx.
+- **Phase 5 + 6 are planned and ready to execute** (2026-07-12). Both designs approved, both plans written TDD-first:
+  - Phase 5 — `design-specs/2026-07-12-phase-5-osint-fusion-design.md` → `plans/2026-07-12-phase-5-osint-fusion.md` (12 tasks).
+  - Phase 6 — `design-specs/2026-07-12-phase-6-frontend-arena-design.md` → `plans/2026-07-12-phase-6-frontend-arena.md` (9 tasks).
+  - Execute Phase 5 first (Phase 6's brief panel renders Phase 5's article citations). Branch per phase, as before.
+- Phase 5: validator hardening — complete the stashed Gate-3 unrecognized-unit patch TDD-first; percentages/bare-number cross-check; explicit-scene-id 4xx. (Fold into Phase 5 Task 8, which already reworks the validator.)
 
 ## Open decisions
-- Exact GDELT endpoint/theme identifiers — deferred to the Phase 5 API spike (deliberate).
+- ~~Exact GDELT endpoint/theme identifiers — deferred to the Phase 5 API spike.~~ **RESOLVED 2026-07-12 by the spike.**
+  DOC 2.0 only (GEO 2.0 is a 404); theme identifiers verified against the live taxonomy; **Gate 1 is a toponym gate, not
+  a spatial one** — GDELT exposes no geotag, and the GKG geofence was measured and rejects 100% of our true positives.
+  Evidence in the Phase 5 design §2; gotcha in `CONTEXT.md`.
 - Preset thresholds/morphology are **engineering defaults, not tuned numbers** (design-spec §6 verbatim): port ssim_dissim≥0.35 ∧ ndvi≤−0.10, forest ndvi≤−0.20, flood ndwi≥0.20; min-areas 1,500/5,000/10,000 m²; open→close kernel 3px. They held on synthetic + real Vizhinjam/Novo pairs without tuning; revisit empirically if Phase 3+ real-data review demands it.
 
 ## Known issues / deviations
