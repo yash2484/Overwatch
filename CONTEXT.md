@@ -68,3 +68,51 @@ The Phase-4 `AnthropicBriefGenerator` (`backend/src/overwatch/briefs/generator.p
 - **`anthropic.Anthropic(api_key=None)` does NOT raise** on this SDK version — credential validation is deferred to the first request, not the constructor (a "fact" I initially got wrong and the implementer corrected empirically). Consequence: constructing the client can't be your missing-key guard. The real guard is at the **API layer** — `POST /aois/{slug}/briefs` returns `422 briefs_unconfigured` when `settings.anthropic_api_key` is falsy, before any brief row is created. The generator itself maps `AuthenticationError` → `PermanentBriefError("anthropic_auth")` as a backstop. When adding new entry points that call the generator, replicate the settings-level key check; do not rely on client construction to fail.
 
 Standing rule: all 187+ tests run with `FakeBriefGenerator` / mocks, so **CI never needs the Anthropic key**. The key enters `.env` only for the live verification gate (user-supplied, never committed).
+
+## GDELT: no geotag exists, and the GKG geofence is a trap
+
+Measured against live queries during the Phase-5 spike (2026-07-12). **Do not rebuild the geofence.** Design-spec §3.2's
+"article geotag within the AOI buffered by 25 km" was written against a GDELT surface that does not exist.
+
+- **GEO 2.0 is down (documented-flaky), and would not help even if up.** `api.gdeltproject.org/api/v2/geo/geo` → **HTTP
+  404** on every form, 5/5 retries: bare query, `mode=PointData&format=GeoJSON`, `format=csv`, and the exact
+  `theme:env_nuclearpower&mode=country&format=html` URL from GDELT's own docs. (`doc/doc` and `tv/tv` resolve fine;
+  `/api/v2/geo` 301s to `/api/v2/geo/` which 403s.) GDELT's client-library docs call the GEO endpoint *"occasionally
+  unavailable (HTTP 404) independent of the DOC API"* — so it is flaky, not provably retired. **Do not chase it:**
+  GDELT states GGG is *"the underlying dataset powering the GEO 2.0 API"*, so GEO 2.0 / `format=geojson` / `format=csv` /
+  BigQuery `gdelt-bq.gdeltv2.ggg` / raw GKG `V2Locations` are all **the same geocoder through different pipes**.
+  Changing transport does not change the payload. DOC 2.0 is the only usable surface.
+- **DOC 2.0 returns no coordinates.** A record carries exactly `url, url_mobile, title, seendate, socialimage, domain,
+  language, sourcecountry`. There is no location operator either: `locationcc:BR` comes back as *"keywords were too
+  short, too long or too common"* — it was parsed as a literal keyword.
+- **`sourcecountry` is the publisher's registration country, not the story's location.** Mongabay's article about
+  deforestation in Pará, Brazil returns `sourcecountry: Indonesia`. Never use it as a geographic proxy.
+- **The GKG-bucket geofence works mechanically and fails on data quality.** DOC's `seendate` does map onto a GKG bucket
+  file (`20240512214500.gkg.csv.zip`, 3.4–8.9 MB), the article is findable in it, and `V2Locations` does carry lat/lon.
+  But for the three articles our demo depends on, GKG's geocoder returned: the **country centroid of India** (~1,000 km
+  from Vizhinjam); **Mato Grosso do Sul, Rio Grande do Sul, and Spain** for the Novo Progresso/Pará story (~330 km, and
+  Pará never appears); and for a third, the seendate bucket contained an **Ethiopia militia story** instead of the
+  article. **A 25 km geofence rejects 100% of our true positives.** V2Locations resolves to country/ADM2 centroids driven
+  by incidental place mentions in body text, not the story's subject location.
+- **Titles routinely omit the place name.** DOC exposes only the title; its `query` matches full text. Zero of six Porto
+  Alegre articles say "Porto Alegre" in the title; zero of four Novo Progresso articles say "Novo Progresso" — they all
+  say "Amazon". A title-only toponym gate scores 0/6 and 0/4 on our own demo corpus. Hence Phase 5's two-layer design:
+  the **strict** term is enforced by GDELT against full text at retrieval; the pure scorer corroborates against a
+  **generous** term list (including regional names) that actually appears in titles.
+- **Rate limiting:** HTTP **429** with a **plaintext** body (not JSON) — never `json.loads` a GDELT response without
+  checking. A `200` can also carry a plaintext error. ≥5 s between requests; after a burst it took ~75 s to clear.
+
+**Root cause, in GDELT's own words — this is why no access method rescues the geofence.** From the GGG announcement:
+*"all locations are drawn from a set of **centroid-based gazeteers** in which every reference to Paris, France will
+always yield precisely the same coordinate."* **News geocoding resolves a place mention to that place's centroid; our
+AOIs are sub-place polygons.** Novo Progresso is a ~38,000 km² municipality — its centroid can sit >100 km from our
+~60 km² AOI. A 25 km geofence is not a strict gate that happens to be broken; it is geometrically meaningless at our
+resolution. BigQuery/GGG was evaluated and rejected on these grounds (plus a GCP dependency for a demo that otherwise
+needs no cloud account).
+
+**Worth revisiting in v0.2:** GGG rows are per *location-mention* and carry `ContextualText` (600-char snippet) and
+`GeoType` (precision code; `>1` excludes country centroids). That context field is a much better substrate for the
+**toponym and thematic** gates than a title — it fixes "titles omit the place name" — but it does **not** rescue a
+*spatial* gate. The decisive BigQuery sandbox query that would overturn the decision is in the design doc §2.4b.
+
+Full evidence and the resulting gate design: `design-specs/2026-07-12-phase-5-osint-fusion-design.md` §2.

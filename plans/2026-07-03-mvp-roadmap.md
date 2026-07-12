@@ -72,14 +72,46 @@
 ## Phase 5 — OSINT fusion (GDELT)
 
 **Goal:** persisted, deterministic news correlation (design spec §3 — the constrained fusion decision).
-**Order matters:** (1) **API spike first** — verify GDELT DOC 2.0 vs GEO 2.0 surface and theme taxonomy against real queries for the three AOIs; no integration code before the spike. (2) TDD the three-gate AND scorer (spatial ≤ 25 km buffer / temporal −30 d..+14 d / thematic per-vertical allowlist) as a pure function. (3) `NewsProvider` interface + Celery fusion task persisting passing articles. (4) Validator extension: article-only claims must use reported-speech framing — **additive by design**: the brief validator's Gate-4 slot, the `reported`/`mixed` claim types, and `evidence_links.evidence_type='article'` already exist from Phase 4; this phase adds the `article_id` FK column (additive migration) and the framing gate. Carry Phase 4's prompt-size discipline (cap + aggregate stats, logged truncation) into article summarization.
-**Gate:** real correlated articles cited for ≥1 AOI; a deliberately irrelevant article rejected by the gates (negative test); `FUSION_ENABLED` kill-switch tested both ways.
+**Design authority:** `design-specs/2026-07-12-phase-5-osint-fusion-design.md` (approved 2026-07-12).
+**Plan:** `plans/2026-07-12-phase-5-osint-fusion.md`.
+
+> ⚠️ **The spike ran, and it invalidated the deliverable list below.** Two assumptions in the original text are false:
+> **GEO 2.0 is retired (HTTP 404 on every variant)** and **DOC 2.0 returns no coordinates and has no location operator**
+> — so the "spatial ≤ 25 km buffer" gate *cannot be built*. The GKG-geofence fallback was then attempted and **measured**:
+> it rejects 100% of our true positives (GDELT geocodes The Hindu's Vizhinjam article to the *country centroid of India*
+> and Mongabay's Pará article to *Spain*). Gate 1 is therefore a **toponym gate**, never a spatial one. The temporal gate
+> was also re-anchored on the **after-scene** (the original window spanned the whole before→after gap — ~3 years for
+> Vizhinjam — making it vacuous). Full evidence: design §2. Gotcha recorded in `CONTEXT.md`.
+
+**Order matters:** (1) ~~API spike first~~ **DONE 2026-07-12** — findings above. (2) TDD the three-gate AND scorer
+(**toponym** / temporal −30 d..+14 d *around the after-scene* / thematic per-vertical allowlist) as a pure function.
+(3) `NewsProvider` interface + Celery fusion task persisting passing articles. (4) Validator extension: article-only
+claims must use reported-speech framing — **additive by design**: the brief validator's Gate-4 slot, the
+`reported`/`mixed` claim types, and `evidence_links.evidence_type='article'` already exist from Phase 4; this phase adds
+the `article_id` FK column (additive migration) and the framing gate. Carry Phase 4's prompt-size discipline (cap +
+aggregate stats, logged truncation) into article summarization.
+**Gate:** real correlated articles cited for ≥1 AOI; a deliberately irrelevant article rejected by the gates (negative
+test); `FUSION_ENABLED` kill-switch tested both ways.
 
 ## Phase 6 — Frontend arena
 
 **Goal:** the demo face — MapLibre GL + deck.gl.
-**Deliverables:** AOI draw tool, scene timeline, before/after slider, detection polygon overlays, brief panel with **click-to-evidence** (sentence click highlights detections on map; article citations open sources). Use the `frontend-design` skill — this is the flagship's face.
-**Backend contract already in place (Phase 4):** `GET /briefs/{id}` returns claims with evidence `detection_id`s, and the GeoJSON detections endpoint returns those ids on features — click-to-evidence is a client-side join by id; no backend rework expected.
+**Design authority:** `design-specs/2026-07-12-phase-6-frontend-arena-design.md` (approved 2026-07-12).
+**Plan:** `plans/2026-07-12-phase-6-frontend-arena.md`.
+**Deliverables:** ~~AOI draw tool~~ (cut — see below), scene timeline, before/after slider, detection polygon overlays,
+brief panel with **click-to-evidence** (sentence click highlights detections on map; article citations open sources).
+
+> **Two corrections to the text below.** (1) **"No backend rework expected" is only half true.** It holds for
+> click-to-evidence (a pure client-side join by id). It is **false for imagery**: nothing serves scene rasters today, so
+> there is no before/after slider without a small backend pre-task (`GET /scenes/{id}/image` + `GET /aois/{slug}/scenes`,
+> design §4). (2) The **AOI draw tool is cut** — all three showcase AOIs are seeded, the demo never draws one, and no gate
+> depends on it. The AOI *switcher* ships. Scope that serves no gate is scope.
+>
+> Design direction is **not** the category reflex (dark + matrix-green + monospace HUD) — that's the AI tell both design
+> skills reached for first. See design §2.
+
+**Backend contract already in place (Phase 4):** `GET /briefs/{id}` returns claims with evidence `detection_id`s, and the
+GeoJSON detections endpoint returns those ids on features — click-to-evidence is a client-side join by id.
 **Gate:** the <2-minute demo works end-to-end for all three showcase AOIs.
 
 ## Phase 7 — Polish
