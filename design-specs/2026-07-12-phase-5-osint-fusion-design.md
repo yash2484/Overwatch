@@ -26,11 +26,25 @@ and nothing else changes.
 The roadmap mandated an API spike before any integration code. It ran, and it invalidated two load-bearing assumptions
 in the approved design spec. **Everything below is measured against live queries, not documentation.**
 
-### 2.1 GEO 2.0 does not exist
+### 2.1 GEO 2.0 is down, and would not help even if it were up
 
-`https://api.gdeltproject.org/api/v2/geo/geo` returns **HTTP 404** for every variant tried, including the documented
-`?query=…&mode=PointData&format=GeoJSON` form and the bare `?query=flood`. The endpoint is retired. **DOC 2.0 is the
-only usable GDELT surface.**
+`https://api.gdeltproject.org/api/v2/geo/geo` returns **HTTP 404** for every form tried — the bare `?query=flood`, the
+documented `?query=…&mode=PointData&format=GeoJSON`, `format=csv`, and the exact `?query=theme:env_nuclearpower&
+mode=country&format=html` URL published in GDELT's own docs. **5/5 consecutive retries, all 404.** Meanwhile `doc/doc`
+and `tv/tv` resolve fine, and `/api/v2/geo` 301-redirects to `/api/v2/geo/` which 403s (a blocked directory listing) —
+so the path exists but the endpoint is not served from it.
+
+> **Wording discipline:** an earlier draft of this spec said GEO 2.0 was "retired." That over-claimed the evidence.
+> GDELT's client-library docs describe the GEO endpoint as *"occasionally unavailable (HTTP 404) independent of the DOC
+> API"* — a **documented-flaky** endpoint. It is unusable right now; whether permanently is not something a 404 can tell
+> us. Either way we cannot build a demo on it.
+
+**But uptime is not the issue.** GDELT's own announcement states that the Global Geographic Graph is *"the underlying
+dataset **powering the GDELT GEO 2.0 API**"* — GEO 2.0, the GGG BigQuery table, and the GKG `V2Locations` field are the
+**same geocoder through different pipes**. Restoring the endpoint (or switching to `format=geojson`, `format=csv`, or
+BigQuery) changes the transport, not the payload. See §2.4 for what that payload actually contains.
+
+**DOC 2.0 is the only usable GDELT surface.**
 
 ### 2.2 DOC 2.0 returns no coordinates, and has no location operator
 
@@ -76,6 +90,52 @@ worse answers.
 
 > **This is recorded in `CONTEXT.md` as a domain gotcha so nobody rebuilds the geofence in six months.**
 > It is also the honest interview answer: *we built the principled gate, measured it, and it rejected every true positive.*
+
+### 2.4b The root cause, in GDELT's own words — and why no access method fixes it
+
+The measured failures in §2.4 are not bugs, and not an artifact of using the raw GKG files instead of a nicer API. They
+are the **documented, intended behaviour** of GDELT's geocoder. From the Global Geographic Graph announcement, verbatim:
+
+> *"all locations are drawn from a set of **centroid-based gazeteers** in which every reference to Paris, France will
+> always yield **precisely the same coordinate**"*
+
+**News geocoding resolves a place *mention* to that place's gazetteer centroid. Our AOIs are sub-place polygons.** Novo
+Progresso is a ~38,000 km² municipality; its centroid can sit >100 km from our ~60 km² AOI. Vizhinjam resolves, at best,
+to Thiruvananthapuram — and in the article we actually measured, only to the **country centroid of India**.
+
+So a 25 km geofence is not a strict gate that happens to be broken. It is **geometrically meaningless at the resolution
+our AOIs operate at**, and it would remain so via *any* transport:
+
+| Access path | Fixes the centroid ceiling? |
+|---|---|
+| GEO 2.0 REST (`format=geojson` / `format=csv`) | **No** — GGG is *"the underlying dataset powering the GEO 2.0 API"*. Same geocoder. (Also currently 404 — §2.1.) |
+| BigQuery `gdelt-bq.gdeltv2.ggg` | **No** — this *is* GGG. Better access, identical coordinates. |
+| Raw GKG `V2Locations` files | **No** — measured directly in §2.4. This is the same extraction. |
+
+**Evaluated and rejected: BigQuery / GGG as the Gate-1 source.** Beyond the centroid ceiling it adds a GCP project,
+service-account credentials in `.env`, a `google-cloud-bigquery` dependency, and a hard cloud dependency for anyone
+cloning the repo — for a gate whose input resolution is the problem. Rejected for v0.1.
+
+**But GGG holds one column worth revisiting later.** Its rows are per *location-mention* (not per-article) and carry
+**`ContextualText` — a 600-character snippet around the mention** — plus `GeoType` (a precision code; `>1` excludes
+country centroids like the India hit). `ContextualText` directly attacks §2.5's problem: titles routinely omit the place
+name, and 600 characters of real context is a far better substrate for the **toponym and thematic** gates than a
+headline. That is a genuine upgrade path — to Gates 1 and 3, **not** to a spatial gate. Filed for v0.2.
+
+**The one experiment that would overturn this decision.** Runnable in the free BigQuery sandbox (no card, 1 TB/month).
+If the Mongabay deforester story comes back, the geofence is alive and Gate 1 should be swapped; if it returns empty,
+the geofence is dead on a second, independent dataset. (`ContextualText` is deliberately excluded from the `SELECT` —
+600 chars × 1.7 B rows would consume most of the free tier in a single query.)
+
+```sql
+SELECT URL, Title, Location, Lat, Lon, GeoType, DATE(DateTime) AS d
+FROM `gdelt-bq.gdeltv2.ggg`
+WHERE DATE(DateTime) BETWEEN '2023-08-01' AND '2023-09-10'
+  AND Lat BETWEEN -7.40 AND -6.90     -- ~±25 km box around the Novo Progresso AOI
+  AND Lon BETWEEN -55.70 AND -55.10
+  AND GeoType > 1                      -- exclude country centroids
+ORDER BY d
+```
 
 ### 2.5 Titles routinely omit the place name — the finding that shapes the scorer
 
