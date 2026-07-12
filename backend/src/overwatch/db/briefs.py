@@ -1,10 +1,15 @@
-"""Brief persistence — briefs/brief_claims/evidence_links (Phase 4 design §2).
+"""Brief persistence — briefs/brief_claims/evidence_links (Phase 4 design §2, Phase 5 §5).
 
-Every claim a brief makes must trace to a real stored detection row: `persist_validated`
-writes one `EvidenceLink(evidence_type="detection")` per detection id a claim cites.
-`mark_stale_briefs` is called from `replace_detections`' transaction so a re-run of a
-detection job demotes any `validated` brief over that exact scene pair to `stale` before
-the underlying detections it cited are deleted.
+Every claim a brief makes must trace to a real stored row: `persist_validated` writes one
+`EvidenceLink(evidence_type="detection")` per detection id a claim cites, and — since
+Phase 5 — one `EvidenceLink(evidence_type="article")` per news-article id. The two kinds
+stay in separate columns, not one polymorphic id, so the database itself can hold the
+observed/reported wall: the CHECK constraints on `evidence_links` make a link of one type
+structurally incapable of carrying the other type's foreign key.
+
+`mark_stale_briefs` is called from both `replace_detections`' and `replace_articles`'
+transactions, so re-running either job demotes any `validated` brief over that exact scene
+pair to `stale` before the evidence it cited is deleted.
 """
 
 from sqlalchemy import func, select, update
@@ -74,7 +79,10 @@ def persist_validated(
     brief_id: int,
     *,
     headline: str,
-    claims: list[tuple[str, str, list[int]]],
+    # (text, claim_type, detection_ids, article_ids) — evidence is two-sided from Phase 5
+    # on. Both id lists are required, not defaulted: "this claim cites no articles" is a
+    # statement the caller must make, never one persistence quietly makes on its behalf.
+    claims: list[tuple[str, str, list[int], list[int]]],
     model: str,
     usage: dict[str, int],
     attempts: int,
@@ -94,7 +102,7 @@ def persist_validated(
     brief.attempts = attempts
     brief.violations = failures
     brief.updated_at = func.now()
-    for seq, (claim_text, claim_type, detection_ids) in enumerate(claims):
+    for seq, (claim_text, claim_type, detection_ids, article_ids) in enumerate(claims):
         claim = BriefClaim(brief_id=brief_id, seq=seq, text=claim_text, claim_type=claim_type)
         session.add(claim)
         session.flush()
@@ -103,6 +111,10 @@ def persist_validated(
                 EvidenceLink(
                     claim_id=claim.id, evidence_type="detection", detection_id=detection_id
                 )
+            )
+        for article_id in article_ids:
+            session.add(
+                EvidenceLink(claim_id=claim.id, evidence_type="article", article_id=article_id)
             )
     session.flush()
 

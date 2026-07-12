@@ -20,7 +20,7 @@ from overwatch.briefs.generator import (
     TransientBriefError,
 )
 from overwatch.briefs.loop import run_brief_loop
-from overwatch.briefs.models import BriefRequest, DetectionRow
+from overwatch.briefs.models import ArticleRow, BriefRequest, DetectionRow
 from overwatch.briefs.validator import validate_brief
 from overwatch.config import settings
 from overwatch.db.aois import list_aois, stamp_checked
@@ -44,6 +44,7 @@ from overwatch.db.jobs import (
     set_stage,
 )
 from overwatch.db.models import Aoi, Brief, Scene
+from overwatch.db.news import articles_for_pair
 from overwatch.db.scenes import upsert_scene
 from overwatch.detection.detector import ClassicalChangeDetector
 from overwatch.detection.presets import VERTICAL_PRESETS
@@ -224,6 +225,10 @@ def _build_brief_request(session: Session, brief: Brief) -> BriefRequest:
         before_scene_id=brief.before_scene_id,
         after_scene_id=brief.after_scene_id,
     )
+    # Keyed on (aoi, after_scene) — the same replace-set key `replace_articles` writes
+    # under. Empty when fusion is off or when no article cleared the three gates, and an
+    # empty list simply renders no SOURCES block: the brief degrades to Phase 4 behavior.
+    articles = articles_for_pair(session, aoi_id=brief.aoi_id, after_scene_id=brief.after_scene_id)
     return BriefRequest(
         aoi_name=aoi.name,
         aoi_slug=aoi.slug,
@@ -241,6 +246,17 @@ def _build_brief_request(session: Session, brief: Brief) -> BriefRequest:
                 confidence=row.confidence,
             )
             for row in rows
+        ],
+        articles=[
+            ArticleRow(
+                id=a.id,
+                title=a.title,
+                domain=a.domain,
+                # news_articles.seendate is a tz-aware DateTime; the prompt and the
+                # validator both deal in calendar dates.
+                seendate=a.seendate.date(),
+            )
+            for a in articles
         ],
     )
 
@@ -271,7 +287,10 @@ def generate_brief(self: Task, brief_id: int) -> None:
                 session,
                 brief_id,
                 headline=result.draft.headline,
-                claims=[(c.text, c.claim_type, c.evidence) for c in result.draft.claims],
+                claims=[
+                    (c.text, c.claim_type, c.evidence, c.article_evidence)
+                    for c in result.draft.claims
+                ],
                 model=result.model,
                 usage=result.usage,
                 attempts=result.attempts,
