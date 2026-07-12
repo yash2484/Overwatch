@@ -3,6 +3,35 @@
 > Living session-state file. Convention: nothing is "done" until it's in **Built & verified** with a note on *how* it was verified.
 
 ## Current phase
+**Phase 5 — OSINT fusion (GDELT): Tasks 1–8 of 12 complete. PAUSED for session handover (2026-07-12).**
+Branch `phase-5-osint-fusion`, clean tree, all work committed. **Resume at Task 9 — read `HANDOVER-phase-5.md` first.**
+
+*Verified 2026-07-12, in-container:* `pytest -q` → **268 passed** (187 baseline + 81 new Phase-5 tests);
+`ruff check .` → All checks passed; `ruff format --check .` → 113 files already formatted;
+`alembic current` → **`0004 (head)`**.
+
+Built: migration 0004 (`news_articles` — **deliberately no geometry column**; AOI toponym terms; `evidence_links.article_id`);
+`overwatch.fusion` package (presets with spike-verified GDELT theme IDs, diacritic-folding matchers, the three-gate AND
+scorer, syndication dedup, `GdeltDocProvider` + offline `FakeNewsProvider`); `db/news.py` replace-set persistence with
+the stale-brief flip; and **validator Gate 4 — the observed/reported wall.**
+
+**Two corrections made during execution, both caught by real data rather than review:**
+
+1. **The temporal window (design decision 3) was wrong.** The approved after-scene-anchored 44-day band passed design
+   review, then failed against reality: Novo Progresso's *actual* scene pair is `2023-07-30 → 2024-07-24`, putting the
+   band at `2024-06-24…2024-08-07` — and **a live GDELT query over it returned ZERO articles.** All four demo articles
+   are Aug–Sep 2023. The forest AOI, our best fusion story, would have shipped with no news section at all. Replaced
+   with a **capped-interval** window (`start = max(before, after − max_lookback) − lead`), verified against all three
+   real pairs — Vizhinjam's 1,460-day gap now yields ~14 months, not 4 years; the cap is the anti-vacuity guard.
+   Design doc decision 3 rewritten. **Standing rule: derive test windows from real scene pairs, never hand-invent dates
+   — hand-invented dates are what hid this bug.**
+2. **A false green was caught.** A Docker build failed silently while the old image kept running, so the suite "passed"
+   against stale code. Always confirm the container restarted on the new image before trusting a green run.
+
+*Highlight:* the adversarial negative is already green as a unit test — **"Amazon Prime Day deals announced" fires the
+toponym gate on "Amazon", and the three-gate AND rejects it anyway.**
+
+## Previous phase
 Phase 4 — Briefs + evidence chain: **implementation complete + reviewed; live gate pending user's Anthropic key** (2026-07-11). All 9 planned tasks built on branch `phase-4-briefs-evidence` following subagent-driven-development (fresh implementer → task review → fixes → final whole-branch review). Non-live gate GREEN (187 passed, ruff clean, alembic `0003 (head)`, `generate_brief` registered in worker). Whole-branch review (opus, `3e1097f`→`3835cd7`) returned **✅ Ready to merge** — the three-gate validator holds as a security boundary end-to-end. The only remaining work is the **live gate (Steps 2–5)**, which needs `OVERWATCH_ANTHROPIC_API_KEY` in `.env` — the user supplies it directly (never via chat / never committed). Full evidence in the plan's "Verification Gate — evidence" section.
 
 Phase 3 merged to main via PR #7 (`3e1097f`, 2026-07-09); merge verified byte-identical to branch tip `5cf599d`, local main synced, stale branch deleted. CI on the merge commit not yet confirmed green — `gh` is installed (2.96.0) but needs `gh auth login` before it can query Actions.
