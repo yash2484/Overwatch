@@ -17,10 +17,16 @@ class FusionPreset(BaseModel):
     vertical: str
     themes: list[str] = Field(min_length=1)
     keywords: list[str] = Field(min_length=1)
-    # Window bounds, anchored on the AFTER scene (design decision 3). Tunable per
-    # vertical, never hardcoded at the call site — same discipline as Phase 2's min-areas.
-    lead_days: int = 30
-    lag_days: int = 14
+    # Window bounds (design decision 3, revised). Tunable per vertical, never hardcoded at
+    # the call site — same discipline as Phase 2's min-areas. See FusionWindow.around().
+    lead_days: int = 30  # padding before the observation interval starts
+    lag_days: int = 14  # padding after the after-scene
+    # The cap that keeps the window bounded. Vizhinjam's real scene pair spans 1,460 days;
+    # without this cap the news window would be ~4 years and the temporal gate would be
+    # vacuous. With it, Vizhinjam's window is ~14 months. Novo Progresso's real gap is
+    # 360 days, so the full interval is admitted — which is what rescues the Aug-2023
+    # deforestation coverage that an after-scene-anchored window returned zero of.
+    max_lookback_days: int = 400
 
 
 FUSION_PRESETS: dict[str, FusionPreset] = {

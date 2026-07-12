@@ -26,20 +26,47 @@ class RawArticle(BaseModel):
 
 
 class FusionWindow(BaseModel):
-    """Observation window, anchored on the AFTER scene (design decision 3).
+    """The observation window: CAPPED INTERVAL (design decision 3, revised 2026-07-12).
 
-    The inherited spec anchored on the whole before->after scene gap, which for Vizhinjam
-    is ~3 years — a "gate" that accepts nearly everything. This is a ~44-day band around
-    when the change was actually observed.
+    Two earlier formulations were both wrong, and real data killed each:
+
+    1. **The inherited spec** anchored on the whole before->after gap. Vizhinjam's real
+       pair spans 1,460 days, so the "gate" was a ~4-year window that accepted nearly
+       anything. Vacuous.
+    2. **After-scene-anchored** (a 44-day band) fixed that but broke the forest AOI.
+       Novo Progresso's real pair is 2023-07-30 -> 2024-07-24, so the band was
+       2024-06-24..2024-08-07 — and a live GDELT query over it returned **zero
+       articles**. The deforestation coverage (Aug-Sep 2023) lands when the clearing
+       *happens*, spread across the interval, not near the after-scene.
+
+    The fix keeps what each got right. News is admitted from the **observation interval**
+    — the span over which the change actually accumulated — but that interval is **capped**
+    at `max_lookback_days` so a multi-year baseline cannot become a multi-year news sweep:
+
+        start = max(before_scene, after_scene - max_lookback_days) - lead_days
+        end   = after_scene + lag_days
+
+    Verified against all three real pairs:
+      * Novo Progresso (360d gap): 2023-06-30..2024-08-07 — admits the Aug-2023 stories.
+      * Vizhinjam     (1460d gap): 2023-12-08..2025-02-25 — ~14 months, NOT 4 years.
+                                    The cap is what does that. Admits the Jun-2024 stories.
+      * Porto Alegre    (33d gap): 2024-03-19..2024-06-04 — tight, because the event was.
     """
 
     start: datetime
     end: datetime
 
     @classmethod
-    def around(cls, after_captured_at: datetime, preset: FusionPreset) -> "FusionWindow":
+    def around(
+        cls,
+        before_captured_at: datetime,
+        after_captured_at: datetime,
+        preset: FusionPreset,
+    ) -> "FusionWindow":
+        earliest = after_captured_at - timedelta(days=preset.max_lookback_days)
+        interval_start = max(before_captured_at, earliest)
         return cls(
-            start=after_captured_at - timedelta(days=preset.lead_days),
+            start=interval_start - timedelta(days=preset.lead_days),
             end=after_captured_at + timedelta(days=preset.lag_days),
         )
 
