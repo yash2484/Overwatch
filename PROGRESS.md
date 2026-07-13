@@ -3,12 +3,22 @@
 > Living session-state file. Convention: nothing is "done" until it's in **Built & verified** with a note on *how* it was verified.
 
 ## Current phase
-**Phase 5 — OSINT fusion (GDELT): Tasks 1–8 of 12 complete. PAUSED for session handover (2026-07-12).**
-Branch `phase-5-osint-fusion`, clean tree, all work committed. **Resume at Task 9 — read `HANDOVER-phase-5.md` first.**
+**Phase 5 — OSINT fusion (GDELT): all 12 tasks BUILT. Verification gate PARTIALLY complete (2026-07-13).**
+Branch `phase-5-osint-fusion`, clean tree, all work committed. **Two items remain, both blocked on externals, neither on
+code. Read `HANDOVER-phase-5-live-gate.md` first.**
 
-*Verified 2026-07-12, in-container:* `pytest -q` → **268 passed** (187 baseline + 81 new Phase-5 tests);
-`ruff check .` → All checks passed; `ruff format --check .` → 113 files already formatted;
-`alembic current` → **`0004 (head)`**.
+*Verified 2026-07-13, in-container:* `pytest -q` → **289 passed**; `ruff check .` → All checks passed;
+`ruff format --check .` → 116 files already formatted; `alembic current` → **`0004 (head)`**;
+`celery inspect registered` lists **`overwatch.fuse`**.
+
+**Blocked (external, not code):**
+1. **Articles cited in a validated brief (the SQL join proof) + the live stale flip** — needs
+   `OVERWATCH_ANTHROPIC_API_KEY`. Compose now passes it through (`5c44499`); the passthrough itself is proven working,
+   since the same mechanism carried `OVERWATCH_FUSION_ENABLED=false` into the container during the kill-switch test.
+2. **Live GDELT fusion** — GDELT is rate-limiting this IP. Four attempts over ~2 min all took `429`, and a subsequent
+   cheap diagnostic query got a **TLS handshake timeout**: the connection is being dropped, not just refused. Our client
+   handles both correctly (429-plaintext and `ConnectTimeout` both map to `TransientFusionError` and retry cleanly).
+   Needs a cooled-off IP, not a code change. **Make exactly one call on the next attempt.**
 
 Built: migration 0004 (`news_articles` — **deliberately no geometry column**; AOI toponym terms; `evidence_links.article_id`);
 `overwatch.fusion` package (presets with spike-verified GDELT theme IDs, diacritic-folding matchers, the three-gate AND
@@ -37,7 +47,26 @@ Phase 4 — Briefs + evidence chain: **implementation complete + reviewed; live 
 Phase 3 merged to main via PR #7 (`3e1097f`, 2026-07-09); merge verified byte-identical to branch tip `5cf599d`, local main synced, stale branch deleted. CI on the merge commit not yet confirmed green — `gh` is installed (2.96.0) but needs `gh auth login` before it can query Actions.
 
 ## Last verified working
-Phase 4 non-live gate (2026-07-11, in-container, all `docker compose exec -T api …`): **`pytest -q` → 187 passed** (2 pre-existing third-party deprecation warnings only — Starlette/httpx TestClient + Alembic path_separator; not Phase-4 code); `ruff check .` → All checks passed; `ruff format --check .` → 98 files already formatted; `alembic current` → `0003 (head)`; `celery -A overwatch.workers.celery_app inspect registered` lists `overwatch.generate_brief`. Whole-branch review returned **✅ Ready to merge** with the validator security boundary confirmed across `prompt → generator → loop → validator → persist`. Secret hygiene: `git grep -iIn "sk-ant-api"` empty, no `.env` tracked. **Live LLM path (real Anthropic API) not yet run — pending user's key.**
+**Phase 5 live gate — the half that needs no API key (2026-07-13, in-container + over HTTP):**
+
+1. **The window correction, proven against real persisted rows.** Rebuilt novo-progresso's baseline from live
+   Sentinel-2: the job succeeded in ~100 s with **24 detections** and reproduced the real pair **`2023-07-30 →
+   2024-07-24`** exactly. Feeding those DB rows through `FusionWindow.around()`:
+   - capped-interval window (**shipped**) → `2023-06-30 … 2024-08-07` → admits **4 / 4** demo articles;
+   - after-scene-anchored window (**replaced**) → `2024-06-24 … 2024-08-07` → admits **0 / 4**.
+
+   The forest AOI would have shipped with no news section at all under the formulation that passed design review.
+2. **Kill-switch, live, both ways.** `OVERWATCH_FUSION_ENABLED=false` → `POST /aois/{slug}/fusion` returns **503
+   `fusion_disabled`**, and it is checked *before* the AOI lookup (an unknown slug returns 503, not a leaked 404). With
+   fusion back on, the same unknown slug correctly returns **404 `aoi_not_found`**. In the detection chain with the
+   switch off, `overwatch.fuse` was invoked **0 times** — the chain ran `ingest_scene`×2 + `run_detection` only.
+3. **GDELT's failure path, exercised for real.** The provider took a live `429` whose body is *plaintext*, parsed it
+   without crashing, raised `TransientFusionError`, backed off 15 → 30 → 60 s, exhausted its retries, and failed the
+   task **without touching the job row or writing a partial article set** (`fuse` is deliberately not a `JobTask`).
+   That is the designed degradation: a GDELT outage costs a news section, nothing more.
+4. **A real bug the fixtures could never catch** — see Known issues; fixed in `585d27e`.
+
+Prior — Phase 4 non-live gate (2026-07-11, in-container, all `docker compose exec -T api …`): **`pytest -q` → 187 passed** (2 pre-existing third-party deprecation warnings only — Starlette/httpx TestClient + Alembic path_separator; not Phase-4 code); `ruff check .` → All checks passed; `ruff format --check .` → 98 files already formatted; `alembic current` → `0003 (head)`; `celery -A overwatch.workers.celery_app inspect registered` lists `overwatch.generate_brief`. Whole-branch review returned **✅ Ready to merge** with the validator security boundary confirmed across `prompt → generator → loop → validator → persist`. Secret hygiene: `git grep -iIn "sk-ant-api"` empty, no `.env` tracked. **Live LLM path (real Anthropic API) not yet run — pending user's key.**
 
 Prior — Phase 3 full pipeline (2026-07-09, in-container): `POST /aois/vizhinjam/jobs` → **HTTP 202** → Celery chain walks `ingest_before → ingest_after → detect` → **succeeded in 463 s with 12 detection polygons** in PostGIS. Queryable by spatial predicate (`ST_Intersects` bbox → 12 features, largest 18,200 m²; disjoint bbox → 0). Re-run of the identical windows selected the same scene pair and left **12 rows, zero duplicates** (pks 37…→49…, proving replace-set deleted+reinserted). Failure path: unreachable STAC → attempts climb 0→2→4 then structured `task_failed`; pre-Sentinel-2 window → fast-fail `no_usable_scene` at attempts=1. Beat: daily 03:00 crontab, due-selection baselines on the last after-scene and stamps `last_checked_at`. **117 tests + ruff check + ruff format green.**
 
@@ -97,8 +126,29 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
   6. **187 tests + ruff check + ruff format green in-container** (70 new Phase-4 tests, all FakeBriefGenerator/mock — CI needs no key). Whole-branch review: **✅ Ready to merge**, validator security boundary confirmed end-to-end.
   7. **PENDING (live gate, needs user's key):** real-API happy path → `validated` + SQL proof of link→pair resolution; rejected-path violations surfaced; staleness live (re-run job → `stale` → fresh brief `validated`). See plan Steps 2–5.
 
+- [~] **Phase 5 — OSINT fusion (GDELT): all 12 tasks built; live gate partially verified.** Branch `phase-5-osint-fusion`.
+  *Verified 2026-07-13, in-container — 289 tests + ruff check + ruff format green; `alembic 0004 (head)`; `overwatch.fuse`
+  registered on the live worker. Live evidence in "Last verified working".*
+  1. Migration 0004 + ORM: `news_articles` (**deliberately no geometry column** — GDELT exposes no article geotag, and
+     its geocoder is centroid-based; Gate 1 is a **toponym** gate, never a spatial one), AOI `place_terms`/`region_terms`,
+     `evidence_links.article_id` + the two CHECK constraints that make a link structurally incapable of carrying the
+     wrong foreign key.
+  2. `overwatch.fusion` — presets (spike-verified GDELT theme IDs), diacritic-folding matchers, the **three-gate AND**
+     scorer (toponym ∧ temporal ∧ thematic), syndication dedup, `GdeltDocProvider` + offline `FakeNewsProvider`.
+  3. `db/news.py` — replace-set persistence keyed on `(aoi, after_scene)`, flipping dependent validated briefs to
+     `stale` *before* deleting the articles they cite.
+  4. **Validator Gate 4 — the observed/reported wall.** A claim backed only by journalism must be framed as reported
+     speech, may carry no quantity, and `mixed` must cite both sides. Journalism never wears the clothes of sensing.
+  5. Briefs read, prompt, and cite articles: a `SOURCES` block (capped, truncation logged) carrying the rules Gate 4
+     enforces; `persist_validated` takes 4-tuples and writes an article `EvidenceLink` per citation.
+  6. `fuse` Celery task + chain wiring + `FUSION_ENABLED` kill-switch; `POST /aois/{slug}/fusion` backfill endpoint.
+  7. **PENDING (needs externals, not code):** articles cited in a *validated* brief (SQL join proof) + live stale flip
+     → needs the Anthropic key. Live GDELT fusion → needs a cooled-off IP.
+
 ## In progress
-- Phase 4 **live verification gate** — blocked on `OVERWATCH_ANTHROPIC_API_KEY` in `.env` (user supplies directly). Once set + `docker compose restart api worker beat`, run plan Steps 2–5 (live happy path / rejected / staleness).
+- **Phase 5 verification gate — the two blocked items** (see Current phase). Both AOIs are now primed: vizhinjam and
+  novo-progresso each have a succeeded job with a real scene pair, so the next session can fuse either immediately.
+- Phase 4 **live verification gate** — same key, same unblock. Phase 5's live brief run subsumes most of it.
 
 ## Next up
 - User: add the Anthropic key to `.env`, restart api/worker/beat → drive the live gate (Steps 2–5).
@@ -138,3 +188,6 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
 - Phase 4: explicit `(before, after)` scene ids in the `POST /briefs` body that don't exist hit the scenes FK at `create_brief` flush → unhandled `IntegrityError` → 500 instead of a clean 4xx. Default path (`latest_succeeded_job`) always supplies valid ids, so this only affects the advanced explicit-pair input. Phase-5 fix needs an ownership-semantics decision (404 vs 422, validate AOI membership).
 - Phase 4: minor deferred — percentages/bare numbers in `observed` claims are uncross-checked (Gate 3 scoped to areas+dates by design); no blank-`headline` structural check; the permanent-failure persistence path drops `usage`/`attempts`.
 - Phase 4: **live gate not yet run** — the real Anthropic API path (happy/rejected/staleness) awaits the user's key in `.env`. All 187 tests use `FakeBriefGenerator`/mocks, so CI stays key-free and green.
+- Phase 4/5: **compose never passed the Anthropic key into the containers.** `Settings(env_file=".env")` resolves `.env` against the CWD *inside* the container (`/app`), and compose mounts only `backend/src`, `backend/tests`, `backend/alembic`, `data` — so a repo-root `.env` never reached the app, and no service passed the variable through. Adding the key would have produced a 422 `briefs_unconfigured` that looks exactly like a bad key. Phase 4's live gate was never run, which is why this sat undiscovered. **Fixed** in `5c44499`; the passthrough is proven working (the same mechanism carried `OVERWATCH_FUSION_ENABLED=false` into the container during the kill-switch test).
+- Phase 5: **the GDELT rate limiter never fired.** `GdeltDocProvider` kept its throttle clock in an *instance* attribute, but `get_news_provider()` builds a fresh provider per task run and Celery re-runs the whole task body on every retry — so each attempt started from a zeroed clock, computed a negative wait, and slept for nothing. Compounding it, `retry_jitter` draws the countdown uniformly from `[0, backoff]` and drew a literal **"Retry in 0s"**. The first live run fired three requests in 28 s at an API that documents one per five. Invisible to every test, because they all replay fixtures through `FakeNewsProvider` and the throttle had **zero coverage**. **Fixed** in `585d27e` (class-level clock + no jitter + 15/30/60 s backoff + Celery `rate_limit="10/m"`, which is the only limit that spans forked pool children). Two tests now pin it.
+- Phase 5: **GDELT rate-limits by IP and stays angry.** After that burst, four spaced retries all took `429`, and a single cheap diagnostic query later got a **TLS handshake timeout** — the connection is dropped, not merely refused. Cooldown is well beyond the ~75 s observed during the spike. **Make exactly one call per attempt, and wait (hours) after any burst.** The client degrades correctly either way: both the plaintext `429` and `httpx.ConnectTimeout` map to `TransientFusionError`, retry, and then fail the task without touching the job row or writing partial articles.
