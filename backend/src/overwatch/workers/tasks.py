@@ -221,9 +221,22 @@ def run_detection(self: Task, job_id: str) -> None:
 _FUSION_RETRY = {
     "bind": True,
     "autoretry_for": (TransientFusionError,),
-    "retry_backoff": True,
+    # Node-level floor, enforced by the worker's consumer ACROSS the whole prefork pool.
+    # The provider's own throttle is per PROCESS, and Celery forks children (the first live
+    # run's retries landed on ForkPoolWorker-7 and -8) — so two concurrent fuse tasks in two
+    # children would each see a cold clock and fire at GDELT together. This is the only limit
+    # that spans them. 10/m == one every 6 s, matching settings.gdelt_min_interval_s.
+    "rate_limit": "10/m",
+    # Backoff is tuned to GDELT, not to a generic 5xx. It documents 1 request / 5 s, and after
+    # a burst it stays angry for ~75 s — so retries start at 15 s and escalate (15/30/60),
+    # rather than the default 1 s that lands right back inside the limit.
+    "retry_backoff": 15,
     "retry_backoff_max": 600,
-    "retry_jitter": True,
+    # NO jitter. Celery's jitter picks uniformly from [0, countdown], so it can retry SOONER
+    # than the backoff intends — the first live run drew a literal "Retry in 0s". Jitter exists
+    # to spread a thundering herd; we are one process behind one IP hitting a PER-IP limit, so
+    # there is no herd to spread and retrying early is strictly worse.
+    "retry_jitter": False,
     "max_retries": 3,
 }
 

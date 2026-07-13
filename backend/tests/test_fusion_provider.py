@@ -13,6 +13,8 @@ from pathlib import Path
 import httpx
 import pytest
 
+from overwatch.config import settings
+from overwatch.fusion import provider as provider_module
 from overwatch.fusion.presets import FUSION_PRESETS
 from overwatch.fusion.provider import (
     FakeNewsProvider,
@@ -24,6 +26,19 @@ from overwatch.fusion.provider import (
 FIXTURES = Path(__file__).parent / "fixtures" / "gdelt"
 START = datetime(2024, 6, 15, tzinfo=UTC)
 END = datetime(2024, 8, 15, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _cold_throttle_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset the process-wide rate-limit clock before every test in this module.
+
+    The throttle is deliberately class-level (GDELT limits per IP, so the limiter must be per
+    process, not per object) — which means its state leaks from one test into the next. These
+    tests drive a MockTransport and never touch the network, so an inherited hot clock would
+    make each of them sleep out a real 6-second interval for nothing: the suite went from 11 s
+    to 58 s before this fixture existed.
+    """
+    monkeypatch.setattr(GdeltDocProvider, "_last_call", float("-inf"))
 
 
 def _provider_with(handler) -> GdeltDocProvider:
@@ -135,3 +150,51 @@ def test_fake_provider_replays_fixtures_offline() -> None:
     body = json.loads((FIXTURES / "vizhinjam_2024.json").read_text(encoding="utf-8"))
     provider = FakeNewsProvider.from_artlist(body)
     assert len(provider.search("anything", START, END)) == 4
+
+
+# --- the throttle ------------------------------------------------------------------
+
+
+def _ok(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, json={"articles": []})
+
+
+def test_throttle_is_process_wide_not_per_instance(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GDELT rate-limits per IP, so the limiter must be per PROCESS — not per object.
+
+    `get_news_provider()` builds a fresh `GdeltDocProvider` on every task run, and Celery
+    re-runs the whole task body on every retry. With the throttle clock stored per instance,
+    each retry starts from a zeroed clock, computes a negative wait, and sleeps for nothing —
+    so the throttle never fires and the retries hammer GDELT inside its own 5-second limit.
+
+    That is not hypothetical: the first live run (2026-07-13) issued three requests in 28
+    seconds and took a 429 on every one of them.
+    """
+    slept: list[float] = []
+    monkeypatch.setattr(provider_module.time, "sleep", lambda s: slept.append(s))
+    # Reset the shared clock to cold. monkeypatch restores it afterwards, so tests stay
+    # isolated from each other despite the state being process-wide by design.
+    monkeypatch.setattr(GdeltDocProvider, "_last_call", float("-inf"))
+
+    _provider_with(_ok).search("q", START, END)
+    assert slept == []  # the first call of the process has nothing to wait for
+
+    # A brand-new instance — exactly what `get_news_provider()` hands the next task attempt.
+    _provider_with(_ok).search("q", START, END)
+
+    assert slept, (
+        "a fresh provider instance ignored the throttle: every Celery retry would hit "
+        "GDELT immediately, inside its 5-second limit"
+    )
+    assert slept[0] >= settings.gdelt_min_interval_s - 0.5
+
+
+def test_throttle_does_not_stall_a_single_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The floor must not become a tax: with the clock cold, the first call goes straight out.
+    slept: list[float] = []
+    monkeypatch.setattr(provider_module.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setattr(GdeltDocProvider, "_last_call", float("-inf"))
+
+    _provider_with(_ok).search("q", START, END)
+
+    assert slept == []

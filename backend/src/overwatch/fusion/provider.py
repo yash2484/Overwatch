@@ -82,18 +82,31 @@ def _to_articles(payload: dict[str, Any]) -> list[RawArticle]:
 class GdeltDocProvider:
     """The real provider. Throttled, and defensive about GDELT's non-JSON responses."""
 
+    # PROCESS-WIDE rate-limit state, deliberately on the class rather than the instance.
+    # GDELT rate-limits per IP, so the limiter has to be per process — and `get_news_provider()`
+    # builds a FRESH provider on every task run while Celery re-runs the whole task body on
+    # every retry. Per-instance state would hand each attempt a zeroed clock, compute a
+    # negative wait, and sleep for nothing: the throttle would never fire. That is not
+    # hypothetical — the first live run (2026-07-13) issued three requests in 28 seconds and
+    # took a 429 on every one.
+    _lock = threading.Lock()
+    # A cold clock must never wait. -inf makes that true by construction; 0.0 only worked by
+    # accident, because time.monotonic() counts from system boot and is usually well past the
+    # interval already.
+    _last_call: float = float("-inf")
+
     def __init__(self, client: httpx.Client | None = None) -> None:
         self._client = client or httpx.Client(timeout=30.0)
-        self._lock = threading.Lock()
-        self._last_call = 0.0
 
     def _throttle(self) -> None:
-        with self._lock:
-            elapsed = time.monotonic() - self._last_call
+        with GdeltDocProvider._lock:
+            elapsed = time.monotonic() - GdeltDocProvider._last_call
             wait = settings.gdelt_min_interval_s - elapsed
             if wait > 0:
                 time.sleep(wait)
-            self._last_call = time.monotonic()
+            # Write through the CLASS. `self._last_call = ...` would create an instance
+            # attribute that shadows the shared one and silently restore the bug.
+            GdeltDocProvider._last_call = time.monotonic()
 
     def search(self, query: str, start: datetime, end: datetime) -> list[RawArticle]:
         self._throttle()

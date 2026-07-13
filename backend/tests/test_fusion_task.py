@@ -22,6 +22,7 @@ import pytest
 from shapely.geometry import box
 from sqlalchemy.orm import Session
 
+from overwatch.config import settings
 from overwatch.db.aois import upsert_aoi
 from overwatch.db.jobs import create_job, mark_succeeded, set_scene
 from overwatch.db.news import articles_for_pair
@@ -217,9 +218,21 @@ def test_fuse_is_a_noop_when_the_aoi_has_no_place_terms(
     assert articles_for_pair(db_session, aoi_id=aoi_id, after_scene_id=after_id) == []
 
 
-def test_fuse_retry_policy_is_configured() -> None:
+def test_fuse_retry_policy_backs_off_past_gdelts_rate_limit() -> None:
+    """The retry policy is tuned to GDELT's documented 1-request-per-5-seconds limit.
+
+    Jitter must stay OFF: Celery draws the countdown uniformly from [0, backoff], so it can
+    retry SOONER than intended — the first live run drew a literal "Retry in 0s" and took a
+    429 on every attempt. Jitter is for spreading a thundering herd; one process behind one
+    IP hitting a PER-IP limit has no herd, and retrying early is strictly worse.
+    """
     from overwatch.fusion.provider import TransientFusionError
 
     assert TransientFusionError in tasks.fuse.autoretry_for
     assert tasks.fuse.max_retries == 3
-    assert tasks.fuse.retry_backoff is True
+    assert tasks.fuse.retry_jitter is False
+    # The first retry must land clear of GDELT's floor, not inside it.
+    assert tasks.fuse.retry_backoff >= settings.gdelt_min_interval_s
+    # The node-level floor: the provider's throttle is per process, and Celery forks children,
+    # so this is the only limit that spans two concurrent fuse tasks.
+    assert tasks.fuse.rate_limit == "10/m"
