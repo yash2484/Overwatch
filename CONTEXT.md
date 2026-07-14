@@ -87,6 +87,14 @@ Measured against live queries during the Phase-5 spike (2026-07-12). **Do not re
   short, too long or too common"* — it was parsed as a literal keyword.
 - **`sourcecountry` is the publisher's registration country, not the story's location.** Mongabay's article about
   deforestation in Pará, Brazil returns `sourcecountry: Indonesia`. Never use it as a geographic proxy.
+- **GDELT's DOC 2.0 *debut* documentation page is STALE about the date range — do not trust it.** It states
+  `STARTDATETIME`/`ENDDATETIME` **"must be within the last 3 months"**, and search engines happily quote that back at
+  you. It is obsolete: the ["1.5 Year Searching"](https://blog.gdeltproject.org/doc-2-0-updates-1-5-year-searching-and-updated-mobile-interface/)
+  post says the rolling cutoff was *"permanently replaced"* with a fixed **Jan 1 2017** start date. Settled empirically
+  in-repo: `backend/tests/fixtures/gdelt/vizhinjam_2024.json` is a verbatim DOC `artlist` capture of **June–July 2024**
+  articles, retrieved on **2026-07-12** — i.e. **two years** after publication. **Historical windows work.** If a
+  historical query comes back empty, the date range is not your bug; look at the query's theme conjunction instead.
+  (Cost us most of a session on 2026-07-14 chasing a coverage limit that does not exist.)
 - **The GKG-bucket geofence works mechanically and fails on data quality.** DOC's `seendate` does map onto a GKG bucket
   file (`20240512214500.gkg.csv.zip`, 3.4–8.9 MB), the article is findable in it, and `V2Locations` does carry lat/lon.
   But for the three articles our demo depends on, GKG's geocoder returned: the **country centroid of India** (~1,000 km

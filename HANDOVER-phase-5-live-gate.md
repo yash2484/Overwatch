@@ -1,10 +1,71 @@
 # Handover — Phase 5, the last two verification items
 
-> **Written:** 2026-07-13, end of session.
+> **Written:** 2026-07-13. **Revised 2026-07-14** after a live run overturned Item B's diagnosis — read §0 first.
 > **Branch:** `phase-5-osint-fusion` — clean tree, all work committed, **289 tests passing**.
-> **State:** **All 12 tasks are BUILT.** The verification gate is *partially* done. Two items remain, and **neither is
-> blocked on code** — one needs an API key, one needs GDELT to stop rate-limiting our IP.
+> **State:** **All 12 tasks are BUILT.** The verification gate is *partially* done. Two items remain: one needs an API
+> key, one is an **open bug** — live GDELT returns **zero articles** for novo-progresso and we do not yet know why.
 > **Supersedes:** `HANDOVER-phase-5.md` (that one got you to Task 9; Tasks 9–12 are now done).
+
+---
+
+## 0. READ THIS FIRST — Item B is not a rate-limit problem (2026-07-14)
+
+The 2026-07-13 handover said Item B just needed a cooled-off IP. **That was wrong.** On 2026-07-14 the IP *was* cold
+(~24 h since the last request) and the first call went through clean:
+
+```
+HTTP/1.1 200 OK   query="Novo Progresso" (theme:ENV_DEFORESTATION OR theme:ENV_FORESTRY)
+                  startdatetime=20230630140435  enddatetime=20240807140432
+job ee2e5ec3…: 0/0 candidates admitted for novo-progresso
+Task overwatch.fuse succeeded in 15.99s: 0
+```
+
+**`200 OK` and zero articles.** Not a 429. Not a crash. GDELT simply returned nothing. Two things this rules out:
+
+- **It is not the rate limiter.** The call succeeded. Waiting longer does not fix a successful call that returns no data.
+- **It is not a GDELT coverage limit.** GDELT's own DOC 2.0 *debut* page still says `STARTDATETIME` **"must be within the
+  last 3 months"** — **that page is stale.** The later ["1.5 Year Searching"](https://blog.gdeltproject.org/doc-2-0-updates-1-5-year-searching-and-updated-mobile-interface/)
+  post says the rolling cutoff was *"permanently replaced"* by a fixed **Jan 1 2017** start. And we have proof in-repo:
+  `backend/tests/fixtures/gdelt/vizhinjam_2024.json` is a **verbatim DOC artlist capture** (it carries the DOC-only
+  fields `url_mobile` / `socialimage` / `sourcecountry`, and a Malayalam-script title) of **June–July 2024** articles,
+  pulled during the 2026-07-12 spike. DOC returns articles **two years back**. Do not re-litigate this.
+
+So `0/0` is a **real, open bug.** The two live hypotheses:
+
+- **(a) The forest query is too strict.** `"Novo Progresso" (theme:ENV_DEFORESTATION OR theme:ENV_FORESTRY)` is a
+  conjunction. If the Mongabay Aug-2023 pieces don't carry those two GKG themes, GDELT correctly returns nothing and
+  our *retrieval layer* — not the scorer — is what's rejecting the demo corpus.
+- **(b) GDELT is serving empty `200`s to a penalised IP.** Possible but unproven; a plain `{}` body is also what a
+  genuine zero-result looks like.
+
+### The decisive test — do this FIRST, one call, on a cold IP
+
+**Fuse `vizhinjam`, not `novo-progresso`.** It is the only AOI whose correct answer we already know, because the spike
+captured it. Verified offline on 2026-07-14: its live window computes to **`2023-12-09 → 2025-02-25`**, and **all four**
+fixture articles fall inside it.
+
+```bash
+curl -s -w " -> HTTP %{http_code}\n" -X POST http://localhost:8000/aois/vizhinjam/fusion
+docker compose logs -f worker | grep -iE "HTTP/1.1|admitted|retry"
+```
+
+Expect ≥4 admitted, including `thehindu.com` (2024-06-15), `thehindu.com` (2024-06-20), `mathrubhumi.com` (2024-07-06),
+`thehindubusinessline.com` (2024-07-15).
+
+- **Vizhinjam returns them → the live pipeline works.** Hypothesis (a) is confirmed and the bug is scoped to the *forest
+  preset's theme filter*. Next step: bisect the novo query — try bare `"Novo Progresso"` with no theme clause, then add
+  themes back one at a time, to find which (if any) theme the Mongabay articles actually carry. **Space every call ≥60 s.**
+- **Vizhinjam ALSO returns 0 → hypothesis (b).** The problem is the IP/transport, not our code. Stop and re-test from a
+  different network before touching a line of source.
+
+### Rate-limit discipline — I broke it, don't repeat it
+
+After the clean call I fired two diagnostics ~25 s apart. GDELT `429`'d the second with a **plaintext** body:
+
+> *"Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries."*
+
+Three requests in ~2 minutes was enough to re-trigger the penalty even though each was individually inside the documented
+5 s ask. **One call. Then watch the worker. Do not re-POST.**
 
 ---
 
@@ -69,26 +130,16 @@ citation resolving to a `news_articles` row.*
 lands around **$0.10–$0.50**. Run it on Opus — the entire point is proving *our* prompt and *our* Gate-4 validator hold
 against *the model we ship*. A cheaper model passing tells you less.
 
-### Item B — live GDELT fusion (needs a cooled-off IP)
+### Item B — live GDELT fusion — ⚠️ **OPEN BUG, see §0**
 
-**GDELT is currently rate-limiting this IP and it is not a five-second problem.** On 2026-07-13 the first live run fired
-three requests in 28 seconds (see the bug in §4) and GDELT escalated: four subsequent well-spaced retries all took
-`429`, and a single cheap diagnostic query minutes later got a **TLS handshake timeout** — the connection is being
-dropped, not merely refused.
+**Superseded by §0.** The original diagnosis ("just needs a cooled-off IP") was disproven on 2026-07-14: the IP *was*
+cold, the call returned `200 OK`, and GDELT still gave us **zero articles** for novo-progresso.
 
-**Do not open with a burst.** Wait (hours, ideally overnight), then make **exactly one** call:
+**Do not open by fusing novo-progresso** — a zero there is ambiguous and tells you nothing new. Run the **vizhinjam
+decisive test in §0** instead: it is the one AOI whose correct answer we already know (4 captured articles, all inside
+its live window). That single call discriminates between "our forest query is too strict" and "GDELT is stiffing this IP".
 
-```bash
-curl -s -w " -> HTTP %{http_code}\n" -X POST http://localhost:8000/aois/novo-progresso/fusion
-# then WATCH, do not re-POST:
-docker compose logs -f worker | grep -iE "HTTP/1.1|admitted|retry"
-```
-
-Success looks like `HTTP/1.1 200 OK` followed by `job …: N/M candidates admitted for novo-progresso`. If you see a
-`429`, **stop** — the retry ladder (15/30/60 s) will play out on its own, and re-POSTing only deepens the penalty box.
-
-Fuse **novo-progresso first**: it is the better story (the Mongabay deforestation coverage), and its window is the one
-that proves the design correction. Then verify:
+Once fusion actually returns rows, the remaining verification is unchanged:
 
 ```sql
 SELECT domain, title, seendate::date, gates_passed, query FROM news_articles ORDER BY seendate;
@@ -165,11 +216,16 @@ and went from 11 s to 58 s.
 
 | # | Item | Status |
 |---|---|---|
-| 1 | Real correlated articles cited for ≥1 AOI, every citation resolving to a `news_articles` row (SQL join) | ⛔ **Item A + B** |
+| 1 | Real correlated articles cited for ≥1 AOI, every citation resolving to a `news_articles` row (SQL join) | ⛔ **blocked on the §0 bug** — live fusion currently retrieves **0 articles**, so there is nothing to cite yet |
 | 2 | A deliberately irrelevant article demonstrably rejected | ✅ *"Amazon Prime Day"* — toponym fires, AND rejects |
 | 3 | `FUSION_ENABLED` tested both ways | ✅ unit **and live** (503 + 0 fuse invocations in the chain) |
 | 4 | Gate 4 rejects an article-only claim wearing observational framing | ✅ Task 8 |
-| 5 | Re-run → zero duplicate rows; a validated brief on the re-fused pair flips to `stale` | 🟡 stale flip unit-proven; **live re-fuse needs Item B**, live flip needs **A + B** |
+| 5 | Re-run → zero duplicate rows; a validated brief on the re-fused pair flips to `stale` | 🟡 stale flip unit-proven; both live halves blocked on the §0 bug |
 
-Once A and B land, Phase 5 is done and the branch is ready for review → merge → **Phase 6** (already fully planned in
-`plans/2026-07-12-phase-6-frontend-arena.md`; its brief panel renders exactly the article citations Item A proves).
+**Phase 5 is further from done than the 2026-07-13 handover implied.** DoD #1 is the load-bearing claim of the whole
+phase — *real articles, really cited* — and right now the live retrieval path returns nothing. Everything downstream of
+it (#1, the live half of #5, and Phase 6's brief panel, which renders exactly these citations) sits behind that.
+The §0 vizhinjam test is the one thing that moves it.
+
+Verified again on 2026-07-14 (so you can trust the baseline): **289 passed**, `ruff check` clean, `alembic current` =
+`0004 (head)`, `FUSION_ENABLED=True`, `news_articles` = **0 rows**, `settings.anthropic_api_key` = **False** (no `.env`).
