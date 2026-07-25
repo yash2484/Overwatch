@@ -8,10 +8,34 @@
 
 ---
 
-## 0. READ THIS FIRST — Item B is not a rate-limit problem (2026-07-14)
+## 0. READ THIS FIRST — the IP is blocked for ≥12 days now, not just rate-limited (2026-07-26)
 
-The 2026-07-13 handover said Item B just needed a cooled-off IP. **That was wrong.** On 2026-07-14 the IP *was* cold
-(~24 h since the last request) and the first call went through clean:
+**Newest evidence first.** On 2026-07-25, after **~12 days of zero GDELT traffic from this IP**, a single fuse call
+(vizhinjam — the decisive test this doc itself prescribes) got **`429` on every one of 4 attempts**: the initial
+request plus the full 15/30/60 s retry ladder, all rejected, task failed cleanly. Our retry policy is not the problem —
+it executed exactly as designed (correct backoff, zero rows written, job row untouched, `585d27e`'s fix confirmed
+working). **The problem is GDELT still rejecting the very first request after nearly two weeks of silence.** That is
+no longer "rate limited," it's "this IP is blocked," on a timescale far longer than the ~75 s the original spike
+observed. Do not retry again today — a 5th attempt right now is not new information.
+
+**What this means for the two open hypotheses below:** the 2026-07-14 result (`200 OK`, 0/0 articles for
+novo-progresso) predates this. We do not know if that AOI's query is genuinely too strict, because **we can no longer
+get a request through at all to re-test it.** The decisive test (fuse vizhinjam) could not run on 2026-07-25 — it hit
+the block before ever reaching the point of discriminating hypothesis (a) vs (b).
+
+**Next attempt, whenever it happens, should not be from this IP.** Two weeks of silence not clearing it suggests a
+long-duration or manual block, not an automatic sliding window. Try a genuinely different network path — not just a
+mobile hotspot on the same carrier/region, but ideally a different ISP entirely, or a cloud VPS `curl` from outside
+India — before spending any more of this IP's attempts. If a different network's first call also gets `429`
+immediately, that would be new and important information (points at something GDELT-side unrelated to this specific
+IP, e.g. this ASN or country range). If it succeeds, resume exactly at "The decisive test" below.
+
+---
+
+### Older context (2026-07-14) — kept for the reasoning trail, superseded by the block above
+
+The 2026-07-13 handover said Item B just needed a cooled-off IP. **That was wrong** — at least, it stopped being
+sufficient. On 2026-07-14 the IP *was* cold (~24 h since the last request) and the first call went through clean:
 
 ```
 HTTP/1.1 200 OK   query="Novo Progresso" (theme:ENV_DEFORESTATION OR theme:ENV_FORESTRY)
