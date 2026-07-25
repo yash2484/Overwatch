@@ -99,10 +99,50 @@ wsl --list --running    # verify: "There are no running distributions."
 
 ## 2. What is left — exactly two things
 
-### Item A — the SQL join proof + the live stale flip (needs the Anthropic key)
+### Item A — the SQL join proof + the live stale flip (needs a WORKING payment method, see below)
 
 This is DoD #1 and the live half of #5: *real articles cited by a real, model-authored, validated brief, with every
 citation resolving to a `news_articles` row.*
+
+**⚠️ 2026-07-26 update — the key exists, the money does not. Read this before repeating any of this diagnosis.**
+
+A key was created and tested end-to-end this session:
+- Env passthrough confirmed working (`settings.anthropic_api_key` → `True`, correct `sk-ant-...` prefix).
+- A real `client.messages.create(...)` call was made against `claude-opus-4-8`.
+- It returned **`400 invalid_request_error`: "Your credit balance is too low to access the Anthropic API."**
+
+That is not an auth failure — the key, the client, and the network path are all proven correct. **The org's balance is
+genuinely $0.00, not a dashboard display quirk.** The blocker is 100% upstream of this codebase: the org
+("Yash's Individual Org — API plan," console.anthropic.com) has never successfully received a payment.
+
+**Root cause, now well-evidenced (not fully certain, but strong):** the card is **RuPay** (ICICI Bank, RuPay-network,
+`6528 XXXX XXXX 8007` — matches the earlier "Discover ending 8007" failure email; RuPay routes internationally via a
+Discover/Diners partnership). **RuPay generally does not support one-time international card-not-present (online)
+transactions**, even with the phone-app "international transactions" toggle on (that toggle typically governs
+ATM/POS abroad, not this transaction class). Every attempt — 2 cards, 2 networks, incognito, both the plan's $5
+credit-purchase modal AND the Console's native "Add funds" — reached OTP for a literal **$0.00** authorization and
+never proceeded to the real charge. That is consistent with RuPay either not routing the real-value authorization at
+all, or the issuer only ever completing the $0 verification step for this transaction class.
+
+The one fact that doesn't fit a pure "broken account" theory: **the same card's Pro subscription renews successfully
+every month via "Link by Stripe."** That is very plausibly explained by recurring/merchant-initiated billing being a
+*different* transaction type than a fresh customer-initiated one-time charge — RuPay may permit the former (a
+pre-registered recurring mandate) while blocking the latter outright. Same card, same bank, genuinely different rules.
+
+**What actually unblocks this — in priority order:**
+1. **A Visa or Mastercard card, any bank, for one $5–6 charge.** Neither network carries RuPay's international-CNP
+   restriction. This is the one fix likely to just work. Doesn't have to be the user's own card.
+2. **A brand-new Anthropic account** (different email) that might carry free trial credit — untested, but costs
+   nothing to check and doesn't depend on solving the RuPay problem at all.
+3. **Anthropic support**, with the evidence above already assembled — but temper expectations. If the diagnosis is
+   right, this is a card-network limitation, not something in Anthropic's/Stripe's control to route around.
+
+**Do NOT re-run the DNS/network/incognito/kill-switch diagnostics again — all already ruled out, see the payment
+troubleshooting in this session's transcript if the reasoning needs re-deriving.** The one open, useful test — if a
+Visa/Mastercard becomes available — is simply: does *that* card's OTP show the real amount, not $0.00. If yes, this
+was RuPay all along and Item A is unblocked immediately using the exact steps below.
+
+---
 
 1. The user creates `c:\dev\Overwatch\.env` (gitignored) containing:
    ```
