@@ -3,22 +3,37 @@
 > Living session-state file. Convention: nothing is "done" until it's in **Built & verified** with a note on *how* it was verified.
 
 ## Current phase
-**Phase 5 — OSINT fusion (GDELT): all 12 tasks BUILT. Verification gate PARTIALLY complete (2026-07-13).**
-Branch `phase-5-osint-fusion`, clean tree, all work committed. **Two items remain, both blocked on externals, neither on
-code. Read `HANDOVER-phase-5-live-gate.md` first.**
+**Phase 5 — OSINT fusion (GDELT): all 12 tasks BUILT. Verification gate PARTIALLY complete (last checked 2026-07-26).**
+Branch `phase-5-osint-fusion`, clean tree, all work committed and **pushed to origin**. **Two items remain, both
+blocked on externals, neither on code. Read `HANDOVER-phase-5-live-gate.md` first — it is kept current in real time;
+this section is a summary, not the source of truth.** Phase 6 (frontend arena, plan already written) does **not**
+depend on either blocker — it renders whatever a `BriefRequest`/`BriefDraft` shape produces, so it can be built and
+tested now against `FakeBriefGenerator`/seeded data and pointed at real briefs later at zero rework cost.
 
 *Verified 2026-07-13, in-container:* `pytest -q` → **289 passed**; `ruff check .` → All checks passed;
 `ruff format --check .` → 116 files already formatted; `alembic current` → **`0004 (head)`**;
 `celery inspect registered` lists **`overwatch.fuse`**.
 
-**Blocked (external, not code):**
-1. **Articles cited in a validated brief (the SQL join proof) + the live stale flip** — needs
-   `OVERWATCH_ANTHROPIC_API_KEY`. Compose now passes it through (`5c44499`); the passthrough itself is proven working,
-   since the same mechanism carried `OVERWATCH_FUSION_ENABLED=false` into the container during the kill-switch test.
-2. **Live GDELT fusion** — GDELT is rate-limiting this IP. Four attempts over ~2 min all took `429`, and a subsequent
-   cheap diagnostic query got a **TLS handshake timeout**: the connection is being dropped, not just refused. Our client
-   handles both correctly (429-plaintext and `ConnectTimeout` both map to `TransientFusionError` and retry cleanly).
-   Needs a cooled-off IP, not a code change. **Make exactly one call on the next attempt.**
+**Blocked (external, not code) — both re-diagnosed on 2026-07-26, see the handover's §0 for full evidence:**
+
+1. **Articles cited in a validated brief (the SQL join proof) + the live stale flip** — needs a **funded** Console org,
+   not just a key. The env passthrough is proven working (`5c44499`) and a key was created and tested end-to-end this
+   session: it authenticated correctly and the API itself returned `400 "Your credit balance is too low"` — a real,
+   informative response, not an auth failure. **The org genuinely has $0.00; no payment has ever landed.** Root cause,
+   well-evidenced: the card is **RuPay** (routes internationally via Discover/Diners), and **RuPay generally does not
+   support one-time international card-not-present transactions** — even with the international-transactions toggle
+   on. Consistent with every observed symptom, including the Pro subscription (a *different*, recurring transaction
+   type via Link) renewing fine on the same card while every one-time charge attempt gets OTP'd for a literal `$0.00`
+   and never proceeds. **Fix: a Visa/Mastercard, any bank, for one ~$6 charge** — not necessarily the user's own card.
+   A fresh Anthropic account with possible trial credit is a secondary option. Do not re-run the DNS/network/incognito
+   diagnosis again — all exhausted this session, see the handover.
+2. **Live GDELT fusion** — worse than previously recorded, not better. The 2026-07-13 handover called this a rate-limit
+   problem; a 2026-07-14 retest found a clean `200 OK` returning **zero articles** for novo-progresso (an open bug, not
+   rate-limiting). A 2026-07-25 retest — after **12 days of zero traffic from this IP** — got **`429` on the initial
+   request and all three retries**. The retry policy (`585d27e`) worked exactly as designed (correct 15/30/60s backoff,
+   zero rows written, job row untouched); the block itself is the news. **This IP is under a block lasting weeks, not
+   seconds.** Next attempt must come from a genuinely different network (different ISP or a cloud VPS — not another
+   Wi-Fi/hotspot on the same regional carrier), per the handover's §0.
 
 Built: migration 0004 (`news_articles` — **deliberately no geometry column**; AOI toponym terms; `evidence_links.article_id`);
 `overwatch.fusion` package (presets with spike-verified GDELT theme IDs, diacritic-folding matchers, the three-gate AND
@@ -151,14 +166,17 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
 - Phase 4 **live verification gate** — same key, same unblock. Phase 5's live brief run subsumes most of it.
 
 ## Next up
-- User: add the Anthropic key to `.env`, restart api/worker/beat → drive the live gate (Steps 2–5).
-- User: `gh auth login`, then confirm CI green on branch `phase-4-briefs-evidence` and merge commit `3e1097f` (`gh run list --limit 3`).
-- Merge `phase-4-briefs-evidence` → main (compare URL in known-issues) once live gate + CI are green.
-- **Phase 5 + 6 are planned and ready to execute** (2026-07-12). Both designs approved, both plans written TDD-first:
-  - Phase 5 — `design-specs/2026-07-12-phase-5-osint-fusion-design.md` → `plans/2026-07-12-phase-5-osint-fusion.md` (12 tasks).
-  - Phase 6 — `design-specs/2026-07-12-phase-6-frontend-arena-design.md` → `plans/2026-07-12-phase-6-frontend-arena.md` (9 tasks).
-  - Execute Phase 5 first (Phase 6's brief panel renders Phase 5's article citations). Branch per phase, as before.
-- Phase 5: validator hardening — complete the stashed Gate-3 unrecognized-unit patch TDD-first; percentages/bare-number cross-check; explicit-scene-id 4xx. (Fold into Phase 5 Task 8, which already reworks the validator.)
+- **Resolve Phase 5's two blockers** (see Current phase + `HANDOVER-phase-5-live-gate.md` §0 for full evidence):
+  1. A Visa/Mastercard charge (any bank) to fund the Console org — RuPay appears unable to complete one-time
+     international CNP charges. Once funded, Item A (SQL join proof + live stale flip) is a ~10-minute run.
+  2. A live GDELT attempt from a genuinely different network (different ISP or a cloud VPS) — this IP has been
+     blocked for ≥12 days as of 2026-07-26. **Do not retry from this network in the meantime.**
+- **In parallel, start Phase 6 (frontend arena)** — `design-specs/2026-07-12-phase-6-frontend-arena-design.md` →
+  `plans/2026-07-12-phase-6-frontend-arena.md` (9 tasks). Doesn't need either blocker: build and test against
+  `FakeBriefGenerator`/seeded article data now, point at real briefs later at zero rework.
+- Once both Phase 5 blockers clear: run the remaining live-gate proofs, then whole-branch review → merge
+  `phase-5-osint-fusion` → main (branch already pushed to origin).
+- `gh auth login` is still outstanding if CI status needs checking from the CLI (`gh run list --limit 3`).
 
 ## Open decisions
 - ~~Exact GDELT endpoint/theme identifiers — deferred to the Phase 5 API spike.~~ **RESOLVED 2026-07-12 by the spike.**

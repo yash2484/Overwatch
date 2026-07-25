@@ -62,11 +62,12 @@ So `0/0` is a **real, open bug.** The two live hypotheses:
 - **(b) GDELT is serving empty `200`s to a penalised IP.** Possible but unproven; a plain `{}` body is also what a
   genuine zero-result looks like.
 
-### The decisive test — do this FIRST, one call, on a cold IP
+### The decisive test — RUN on 2026-07-25, blocked before it could answer anything
 
-**Fuse `vizhinjam`, not `novo-progresso`.** It is the only AOI whose correct answer we already know, because the spike
-captured it. Verified offline on 2026-07-14: its live window computes to **`2023-12-09 → 2025-02-25`**, and **all four**
-fixture articles fall inside it.
+**⚠️ This already happened. Do not run it again from this IP.** See §0 above for the result: all 4 attempts (initial
++ 15/30/60 s retries) got `429` after 12 days of silence. Neither hypothesis below got resolved — the test never got
+far enough to discriminate them, because the request never got through at all. Kept here only so the reasoning and
+expected-output shape are on record for whoever runs this from a different network next:
 
 ```bash
 curl -s -w " -> HTTP %{http_code}\n" -X POST http://localhost:8000/aois/vizhinjam/fusion
@@ -74,13 +75,14 @@ docker compose logs -f worker | grep -iE "HTTP/1.1|admitted|retry"
 ```
 
 Expect ≥4 admitted, including `thehindu.com` (2024-06-15), `thehindu.com` (2024-06-20), `mathrubhumi.com` (2024-07-06),
-`thehindubusinessline.com` (2024-07-15).
+`thehindubusinessline.com` (2024-07-15) — **if** the request gets past GDELT's block at all.
 
 - **Vizhinjam returns them → the live pipeline works.** Hypothesis (a) is confirmed and the bug is scoped to the *forest
   preset's theme filter*. Next step: bisect the novo query — try bare `"Novo Progresso"` with no theme clause, then add
   themes back one at a time, to find which (if any) theme the Mongabay articles actually carry. **Space every call ≥60 s.**
-- **Vizhinjam ALSO returns 0 → hypothesis (b).** The problem is the IP/transport, not our code. Stop and re-test from a
-  different network before touching a line of source.
+- **Vizhinjam ALSO returns 0 (as a clean `200`, not a `429`) → hypothesis (b).** The problem is the IP/transport, not
+  our code. Stop and re-test from a different network before touching a line of source.
+- **Vizhinjam returns `429` → you're hitting the same block this session hit.** Don't retry from this network; see §0.
 
 ### Rate-limit discipline — I broke it, don't repeat it
 
@@ -194,16 +196,20 @@ was RuPay all along and Item A is unblocked immediately using the exact steps be
 lands around **$0.10–$0.50**. Run it on Opus — the entire point is proving *our* prompt and *our* Gate-4 validator hold
 against *the model we ship*. A cheaper model passing tells you less.
 
-### Item B — live GDELT fusion — ⚠️ **OPEN BUG, see §0**
+### Item B — live GDELT fusion — ⚠️ **BLOCKED, see §0 — do not retry from this IP/network**
 
-**Superseded by §0.** The original diagnosis ("just needs a cooled-off IP") was disproven on 2026-07-14: the IP *was*
-cold, the call returned `200 OK`, and GDELT still gave us **zero articles** for novo-progresso.
+**Superseded twice now.** The original diagnosis ("just needs a cooled-off IP") was disproven on 2026-07-14 — the IP
+was cold, the call returned `200 OK`, and GDELT still gave zero articles for novo-progresso. The follow-up diagnosis
+("fuse vizhinjam to discriminate the two hypotheses") was itself run on 2026-07-25 and **could not complete** — 12
+days of silence from this IP and the very first request still got `429`. **This IP appears to be under a block that
+lasts weeks, not seconds.**
 
-**Do not open by fusing novo-progresso** — a zero there is ambiguous and tells you nothing new. Run the **vizhinjam
-decisive test in §0** instead: it is the one AOI whose correct answer we already know (4 captured articles, all inside
-its live window). That single call discriminates between "our forest query is too strict" and "GDELT is stiffing this IP".
+**Do not fuse anything from this network until that changes.** The next session's first move on Item B should be
+trying from a **genuinely different network** (different ISP, or a cloud VPS `curl`, not just a different Wi-Fi on
+the same regional carrier) — full reasoning and the exact decisive-test command are in §0 and just above. If a
+different network gets through cleanly, resume the vizhinjam-vs-novo-progresso discrimination described there.
 
-Once fusion actually returns rows, the remaining verification is unchanged:
+Once fusion actually returns rows (from wherever it eventually runs), the remaining verification is unchanged:
 
 ```sql
 SELECT domain, title, seendate::date, gates_passed, query FROM news_articles ORDER BY seendate;
