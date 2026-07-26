@@ -1,0 +1,84 @@
+@import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+/* IBM Plex: technical/industrial provenance, and the mono shares metrics with the sans, so a
+   column of areas lines up under its label. Not Inter (the saturated default). */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
+@theme {
+  /* Tailwind's stock palette is deliberately NOT extended — these tokens replace it.
+     Shipping slate-500 is how a UI ends up looking generated. */
+
+  /* Surround: mid-dark graphite, NOT OLED black. The satellite imagery is the content;
+     a light UI blows out the rasters and pure black makes them glare. Same reason photo
+     editors use mid-gray surrounds. (design §2.2) */
+  --color-surround: oklch(0.22 0.01 260);
+  --color-panel: oklch(0.26 0.012 260);
+  --color-raised: oklch(0.31 0.014 260);
+  --color-line: oklch(0.38 0.016 260);
+
+  /* Body/secondary text. Contrast MEASURED (OKLCH -> linear sRGB -> WCAG), not assumed:
+       --ink     on --surround = 14.96:1   (on --panel = 13.43:1)
+       --ink-dim on --surround =  6.98:1   (on --panel =  6.26:1)
+     Both clear the 4.5:1 body-text floor with margin. (design §8 gate 5) */
+  --color-ink: oklch(0.95 0.005 260);
+  --color-ink-dim: oklch(0.72 0.01 260);
+
+  /* THE accent. One hue, one meaning: the evidence link. A selected claim and the
+     detections backing it share it. Nothing else in the UI may use it.
+     Magenta because it is ABSENT from land cover — ocean, forest and turbid water are
+     blue/green/brown, so this can never be mistaken for terrain. (design §2.3) */
+  --color-evidence: oklch(0.72 0.19 340);
+  --color-evidence-dim: oklch(0.72 0.19 340 / 0.18);
+  --color-evidence-line: oklch(0.72 0.19 340 / 0.55);
+
+  /* Change-type hues. These are DATA, not decoration. They must survive selection —
+     selection is expressed as stroke weight + halo, never a hue swap. */
+  --color-change-construction: oklch(0.75 0.15 65);
+  --color-change-clearing: oklch(0.7 0.16 25);
+  --color-change-water: oklch(0.72 0.13 230);
+
+  /* Status vocabulary — desaturated; never full-chroma on inactive states. */
+  --color-ok: oklch(0.72 0.12 150);
+  --color-warn: oklch(0.78 0.12 85);
+  --color-bad: oklch(0.65 0.16 25);
+
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-surround);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Every number that can change gets tabular figures: areas and confidences update on
+   selection and must not reflow. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Not optional. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
