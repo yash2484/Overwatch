@@ -66,8 +66,13 @@ export interface Job {
   status: JobStatus;
   stage: string | null;
   attempts: number;
+  params: Record<string, unknown>;
+  before_scene_id: number | null;
+  after_scene_id: number | null;
   detection_count: number | null;
   error: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Aoi {
@@ -75,5 +80,18 @@ export interface Aoi {
   name: string;
   vertical: string;
   geometry: { type: "Polygon"; coordinates: number[][][] };
+  cadence_days: number | null;
   area_km2: number;
+  created_at: string;
+}
+
+export interface DateRange {
+  start: string; // YYYY-MM-DD
+  end: string;
+}
+
+/** Body for POST /aois/{slug}/jobs — a before + after date window (Phase 3 contract). */
+export interface JobSubmit {
+  before: DateRange;
+  after: DateRange;
 }
