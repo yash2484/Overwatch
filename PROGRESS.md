@@ -3,6 +3,30 @@
 > Living session-state file. Convention: nothing is "done" until it's in **Built & verified** with a note on *how* it was verified.
 
 ## Current phase
+**Phase 6 — Frontend arena: IN PROGRESS (started 2026-07-26). Branch `phase-6-frontend-arena` (off `phase-5-osint-fusion`).**
+Executing `plans/2026-07-12-phase-6-frontend-arena.md` via `superpowers:executing-plans`, verifying each task live in
+the browser (Playwright screenshots). **Tasks 1–6 done + committed + live-verified; Task 7 next.**
+
+*Done & verified (2026-07-26/27, in-container + live browser at localhost:5173):*
+- **Task 2** scaffold — React **19**, Vite/Tailwind v4, Vitest; bespoke OKLCH tokens; contrast MEASURED (ink 14.96:1, dim 6.98:1).
+- **Task 3** pure bidirectional evidence join (`buildEvidenceIndex`/`boundsOf`) — 8 tests. **Task 5** selection reducer — 6 tests. (14 frontend tests green, tsc clean.)
+- **Task 4** typed API client + TanStack Query hooks (2s polling), aligned field-for-field to the backend Pydantic schemas.
+- **Task 1** scenes API — `GET /aois/{slug}/scenes` + `GET /scenes/{id}/image` (deterministic path, on-demand render + cache). 296 backend tests green.
+- **Task 6** map canvas — two synced MapLibre maps + clip-path swipe, vector Carto dark-matter basemap tinted to surround, deck.gl detection overlay (both sides), selection = magenta halo + stroke weight.
+- **Comprehension layer (from user feedback):** header context line (`<vertical> · <finding> · <before> → <after>`), dated swipe chips, change-type legend — all derived from AOI+detections, no LLM needed. Fixed-reflectance imagery stretch so before/after read as consistent daytime.
+
+*Upgrades folded in (user-approved):* vector graphite basemap; clip-path swipe; **evidence leader-line + ⌘K command palette still to build (Tasks 7/8)**; React 19.
+
+*Key engineering facts for resume:*
+- **maplibre-gl pinned to v5** — deck.gl 9.3 `MapboxOverlay` crashes on v6's refactored camera internals (`_nearZ`).
+- **Frontend dev runs on the HOST** (`cd frontend && npm run dev`, localhost:5173). The compose `frontend` service bakes source with no bind-mount and shadows the port — **`docker compose stop frontend`** before host dev. Vite proxies `/api` → localhost:8000.
+- Backend render robustness: `_scene_meta` backfills pre-Phase-6 rows (porto-alegre) + derives UTM epsg from the MGRS tile; console renders at fixed_max=3000, gamma=0.75.
+- Commits on branch: `cc869b8` scaffold → `b4746be` join → `228edca` selection → `339e428` hooks → `e5086e9` scenes API → `601e3cc` map → `5b25fcd` imagery-render-fix → `544eac1` comprehension-layer → `8b80e19` fixed-stretch.
+
+*Next (Task 7, user-approved approach):* **seed a hand-authored demo brief per AOI** (dev-only, marked) so the full brief panel + bidirectional click-to-evidence + magenta leader-line work now (real LLM briefs are blocked on the Anthropic key). Then Task 8 (scene timeline rail + ⌘K palette + final App composition) and Task 9 (verification gate). Porto-alegre has 0 detections (flood engine found none though the flood is visible — a Phase 2 detection matter, out of Phase 6 scope); its panel shows the honest "no change" state.
+
+---
+
 **Phase 5 — OSINT fusion (GDELT): all 12 tasks BUILT. Verification gate PARTIALLY complete (last checked 2026-07-26).**
 Branch `phase-5-osint-fusion`, clean tree, all work committed and **pushed to origin**. **Two items remain, both
 blocked on externals, neither on code. Read `HANDOVER-phase-5-live-gate.md` first — it is kept current in real time;
