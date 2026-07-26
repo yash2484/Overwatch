@@ -29,8 +29,39 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["scenes"])
 
 
+# Water-heavy AOIs (ports, floods) have a near-zero median reflectance; a linear stretch
+# then reads like a night scene. A mild midtone lift keeps the console imagery legible as
+# daytime true colour. (Phase-1/2 eyeball tooling keeps the default linear stretch.)
+CONSOLE_GAMMA = 0.7
+
+
 def scene_image_path(aoi_slug: str, stac_id: str) -> Path:
     return settings.scene_image_dir / f"{aoi_slug}_{stac_id}.png"
+
+
+def _epsg_from_stac_id(stac_id: str) -> int:
+    """Derive the scene's native UTM EPSG from its MGRS tile (e.g. S2A_22JDM_... -> 32722).
+
+    Pre-Phase-6 scene rows stored only assets + window_shape in ``meta``; the UTM zone is
+    still recoverable from the STAC id's tile token. Band letters C..M are the southern
+    hemisphere (327xx), N..X the northern (326xx).
+    """
+    tile = stac_id.split("_")[1]  # e.g. "22JDM"
+    zone = int(tile[:2])
+    southern = tile[2].upper() < "N"
+    return (32700 if southern else 32600) + zone
+
+
+def _scene_meta(scene: Scene) -> SceneMeta:
+    """Build a SceneMeta, backfilling fields absent from pre-Phase-6 rows from the row itself."""
+    m = dict(scene.meta or {})
+    m.setdefault("stac_id", scene.stac_id)
+    m.setdefault("collection", "sentinel-2-l2a")
+    m.setdefault("captured_at", scene.captured_at.isoformat())
+    m.setdefault("cloud_pct", scene.cloud_pct)
+    if "epsg" not in m:
+        m["epsg"] = _epsg_from_stac_id(scene.stac_id)
+    return SceneMeta.model_validate(m)
 
 
 def render_scene_png(scene: Scene, out_path: Path) -> Path:
@@ -43,10 +74,10 @@ def render_scene_png(scene: Scene, out_path: Path) -> Path:
     from overwatch.imagery.harmonize import harmonize_window
     from overwatch.workers.tasks import BANDS, get_provider
 
-    meta = SceneMeta.model_validate(scene.meta)
+    meta = _scene_meta(scene)
     geometry = to_shape(scene.window_geom)
     window = harmonize_window(get_provider().read_window(meta, geometry, BANDS), meta)
-    return render_rgb_png(window, out_path)
+    return render_rgb_png(window, out_path, gamma=CONSOLE_GAMMA)
 
 
 @router.get("/aois/{slug}/scenes")
