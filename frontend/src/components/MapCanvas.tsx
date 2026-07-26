@@ -67,6 +67,10 @@ function tintBasemap(map: maplibregl.Map) {
 
 /** Insert (or replace) a scene raster, clipped below the first label layer for legibility. */
 function applyRaster(map: maplibregl.Map, key: string, scene: SceneSummary | null) {
+  // Never touch sources/layers before the style is up — doing so throws "Style is not done
+  // loading", which is uncaught and would blank the app. The ready flag re-fires this once
+  // the style loads.
+  if (!map.isStyleLoaded()) return;
   const id = `scene-${key}`;
   if (map.getLayer(id)) map.removeLayer(id);
   if (map.getSource(id)) map.removeSource(id);
@@ -152,6 +156,10 @@ export function MapCanvas({ aoi, before, after, detections, index, swipe }: Prop
   // --- init both maps once ---
   useEffect(() => {
     if (!beforeRef.current || !afterRef.current || beforeMap.current) return;
+    // Switching AOI tears down and recreates the maps; the new maps aren't loaded yet, so
+    // reset readiness or the raster effects fire against an unloaded style.
+    setReadyB(false);
+    setReadyA(false);
     const bounds = bboxOf(aoi);
     const common = {
       style: BASEMAP_STYLE,

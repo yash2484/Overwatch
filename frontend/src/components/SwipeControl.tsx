@@ -1,6 +1,7 @@
 import { ChevronsLeftRight } from "lucide-react";
 import type { KeyboardEvent, PointerEvent } from "react";
 import { useRef } from "react";
+import { monthYear } from "../lib/format";
 import { useSelection } from "../state/SelectionContext";
 
 const STEP = 0.02;
@@ -10,7 +11,13 @@ const STEP = 0.02;
  * real slider role, and a 44x44 hit target. The track is pointer-transparent so the map
  * still pans underneath; only the handle captures the pointer.
  */
-export function SwipeControl() {
+export function SwipeControl({
+  beforeDate,
+  afterDate,
+}: {
+  beforeDate?: string | null;
+  afterDate?: string | null;
+}) {
   const { state, dispatch } = useSelection();
   const trackRef = useRef<HTMLDivElement>(null);
   const swipe = state.swipe;
@@ -52,10 +59,10 @@ export function SwipeControl() {
   return (
     <div ref={trackRef} className="pointer-events-none absolute inset-0 z-10">
       <span className={`${chip} left-3`} style={chipStyle}>
-        BEFORE
+        BEFORE{beforeDate ? ` · ${monthYear(beforeDate)}` : ""}
       </span>
       <span className={`${chip} right-3`} style={chipStyle}>
-        AFTER
+        {afterDate ? `${monthYear(afterDate)} · ` : ""}AFTER
       </span>
 
       <div
