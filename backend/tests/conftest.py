@@ -23,7 +23,7 @@ def migrated_db() -> None:
 # Every prefix the test suite seeds under. A prefix missing from this list is a slow leak:
 # its rows are never cleaned, they pile up in the shared dev database, and `list_aois` (the
 # beat task's due-recheck sweep) will eventually iterate over them as if they were real.
-_TEST_SLUG_PREFIXES = ("t3-", "t5-")
+_TEST_SLUG_PREFIXES = ("t3-", "t5-", "t6-")
 
 
 @pytest.fixture()

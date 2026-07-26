@@ -66,6 +66,7 @@ from overwatch.imagery.gating import MIN_USABLE_FRACTION, find_usable_scene
 from overwatch.imagery.harmonize import harmonize_window
 from overwatch.imagery.models import SceneMeta
 from overwatch.imagery.provider import ImageryProvider
+from overwatch.imagery.render import render_rgb_png
 from overwatch.workers.celery_app import celery_app
 from overwatch.workers.recheck import is_due, recheck_windows
 
@@ -173,6 +174,18 @@ def ingest_scene(self: Task, job_id: str, which: str) -> None:
             meta=selection.scene.model_dump(mode="json"),
         )
         set_scene(session, job_id, which, scene_id)
+    # Write the console's true-colour PNG on the deterministic path, reusing the window the
+    # gate already read (no second HTTPS fetch). Best-effort: a render failure must never
+    # fail an otherwise-good ingestion — GET /scenes/{id}/image renders on demand instead.
+    try:
+        from overwatch.api.scenes import scene_image_path
+
+        render_rgb_png(
+            harmonize_window(selection.window, selection.scene),
+            scene_image_path(slug, selection.scene.stac_id),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("job %s: scene PNG render failed (non-fatal): %s", job_id, exc)
     logger.info("job %s: %s scene %s (id=%s)", job_id, which, selection.scene.stac_id, scene_id)
 
 
