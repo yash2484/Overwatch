@@ -178,12 +178,17 @@ def ingest_scene(self: Task, job_id: str, which: str) -> None:
     # gate already read (no second HTTPS fetch). Best-effort: a render failure must never
     # fail an otherwise-good ingestion — GET /scenes/{id}/image renders on demand instead.
     try:
-        from overwatch.api.scenes import CONSOLE_GAMMA, scene_image_path
+        from overwatch.api.scenes import (
+            CONSOLE_GAMMA,
+            CONSOLE_MAX_REFLECTANCE,
+            scene_image_path,
+        )
 
         render_rgb_png(
             harmonize_window(selection.window, selection.scene),
             scene_image_path(slug, selection.scene.stac_id),
             gamma=CONSOLE_GAMMA,
+            fixed_max=CONSOLE_MAX_REFLECTANCE,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("job %s: scene PNG render failed (non-fatal): %s", job_id, exc)

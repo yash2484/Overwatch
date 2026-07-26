@@ -29,10 +29,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["scenes"])
 
 
-# Water-heavy AOIs (ports, floods) have a near-zero median reflectance; a linear stretch
-# then reads like a night scene. A mild midtone lift keeps the console imagery legible as
-# daytime true colour. (Phase-1/2 eyeball tooling keeps the default linear stretch.)
-CONSOLE_GAMMA = 0.7
+# Console true-colour rendering. A FIXED reflectance ceiling (S2 L2A BOA is reflectance
+# x10000; ~3000 is a standard bright-surface ceiling) makes a before/after pair render
+# consistently — per-scene percentiles let a bright new port crush the after scene to a
+# "night" look. A mild gamma lift keeps water-heavy scenes reading as daytime. (Phase-1/2
+# eyeball tooling keeps the default per-scene percentile stretch.)
+CONSOLE_GAMMA = 0.75
+CONSOLE_MAX_REFLECTANCE = 3000.0
 
 
 def scene_image_path(aoi_slug: str, stac_id: str) -> Path:
@@ -77,7 +80,9 @@ def render_scene_png(scene: Scene, out_path: Path) -> Path:
     meta = _scene_meta(scene)
     geometry = to_shape(scene.window_geom)
     window = harmonize_window(get_provider().read_window(meta, geometry, BANDS), meta)
-    return render_rgb_png(window, out_path, gamma=CONSOLE_GAMMA)
+    return render_rgb_png(
+        window, out_path, gamma=CONSOLE_GAMMA, fixed_max=CONSOLE_MAX_REFLECTANCE
+    )
 
 
 @router.get("/aois/{slug}/scenes")
