@@ -3,9 +3,13 @@
 > Living session-state file. Convention: nothing is "done" until it's in **Built & verified** with a note on *how* it was verified.
 
 ## Current phase
-**Phase 6 — Frontend arena: IN PROGRESS (started 2026-07-26). Branch `phase-6-frontend-arena` (off `phase-5-osint-fusion`).**
-Executing `plans/2026-07-12-phase-6-frontend-arena.md` via `superpowers:executing-plans`, verifying each task live in
-the browser (Playwright screenshots). **Tasks 1–6 done + committed + live-verified; Task 7 next.**
+**Phase 6 — Frontend arena: COMPLETE — all 9 tasks built + verified, demo-ready (2026-07-27). Branch
+`phase-6-frontend-arena` (off `phase-5-osint-fusion`), committed, NOT yet pushed / merged.**
+Executed `plans/2026-07-12-phase-6-frontend-arena.md` via `superpowers:executing-plans`, verifying each task live in
+the browser (Playwright screenshots). **Verification gate GREEN:** tsc clean; 14 frontend tests; 296 backend tests;
+`vite build` succeeds (582 KB gz); ruff check + format clean; **both evidence-join directions proven live**
+(claim→map leader-line + fly-to; map-polygon→claim select+scroll); contrast measured (ink 14.96:1 / dim 6.98:1 /
+faint 4.61:1 on panel); `prefers-reduced-motion` block present.
 
 *Done & verified (2026-07-26/27, in-container + live browser at localhost:5173):*
 - **Task 2** scaffold — React **19**, Vite/Tailwind v4, Vitest; bespoke OKLCH tokens; contrast MEASURED (ink 14.96:1, dim 6.98:1).
@@ -14,16 +18,20 @@ the browser (Playwright screenshots). **Tasks 1–6 done + committed + live-veri
 - **Task 1** scenes API — `GET /aois/{slug}/scenes` + `GET /scenes/{id}/image` (deterministic path, on-demand render + cache). 296 backend tests green.
 - **Task 6** map canvas — two synced MapLibre maps + clip-path swipe, vector Carto dark-matter basemap tinted to surround, deck.gl detection overlay (both sides), selection = magenta halo + stroke weight.
 - **Comprehension layer (from user feedback):** header context line (`<vertical> · <finding> · <before> → <after>`), dated swipe chips, change-type legend — all derived from AOI+detections, no LLM needed. Fixed-reflectance imagery stretch so before/after read as consistent daytime.
+- **Task 7** brief panel + bidirectional click-to-evidence + magenta leader-line (rAF-glued; suppressed above a 6-detection cap) + rejected/stale/empty states. Demo briefs are hand-authored but DATA-GROUNDED (real detection ids, computed areas), seeded via `python -m overwatch.db.seed_briefs`, marked `model="demo-seed"` — real LLM briefs drop in once the Anthropic key is funded.
+- **Task 8** scene timeline rail (date axis, pair connected, click a scene to swap after-imagery) + ⌘K/Ctrl-K read-only command palette (jump to area / light a claim) + final column composition.
+- **Task 9** verification gate GREEN (see Current-phase summary). **Demo is READ-ONLY (user-approved)** — no live job/brief triggers; always fast, no dependency on live Sentinel-2 or the blocked key.
 
-*Upgrades folded in (user-approved):* vector graphite basemap; clip-path swipe; **evidence leader-line + ⌘K command palette still to build (Tasks 7/8)**; React 19.
+*Upgrades folded in (user-approved):* vector graphite basemap; clip-path swipe; evidence leader-line; ⌘K palette; React 19.
 
 *Key engineering facts for resume:*
 - **maplibre-gl pinned to v5** — deck.gl 9.3 `MapboxOverlay` crashes on v6's refactored camera internals (`_nearZ`).
 - **Frontend dev runs on the HOST** (`cd frontend && npm run dev`, localhost:5173). The compose `frontend` service bakes source with no bind-mount and shadows the port — **`docker compose stop frontend`** before host dev. Vite proxies `/api` → localhost:8000.
 - Backend render robustness: `_scene_meta` backfills pre-Phase-6 rows (porto-alegre) + derives UTM epsg from the MGRS tile; console renders at fixed_max=3000, gamma=0.75.
-- Commits on branch: `cc869b8` scaffold → `b4746be` join → `228edca` selection → `339e428` hooks → `e5086e9` scenes API → `601e3cc` map → `5b25fcd` imagery-render-fix → `544eac1` comprehension-layer → `8b80e19` fixed-stretch.
+- Commits on branch (…`8b80e19` fixed-stretch) → `65b6eb7` progress → `c900795` brief-panel/leader-line → `a69fdcb` timeline/palette → `a97ae54` format.
+- **Demo caveats (honest, not bugs):** (1) Vizhinjam's *after* (2025) scene still renders dark — its harmonized water reflectance is genuinely ~0 that day; the fixed stretch fixed the *before* and the context frames the after ("empty coast → active port"). (2) Porto-alegre has 0 detections — the flood engine found none though the flood is visibly obvious (a Phase-2 detection-tuning matter, out of Phase-6 scope); panel shows the honest "no change" empty state. (3) Briefs are seeded (marked DEMO) until the key is funded.
 
-*Next (Task 7, user-approved approach):* **seed a hand-authored demo brief per AOI** (dev-only, marked) so the full brief panel + bidirectional click-to-evidence + magenta leader-line work now (real LLM briefs are blocked on the Anthropic key). Then Task 8 (scene timeline rail + ⌘K palette + final App composition) and Task 9 (verification gate). Porto-alegre has 0 detections (flood engine found none though the flood is visible — a Phase 2 detection matter, out of Phase 6 scope); its panel shows the honest "no change" state.
+*Next:* Phase 6 is demo-ready. Remaining is integration, not build: **push `phase-6-frontend-arena` + open a compare URL for the user to merge** (direct push to main is denied by policy; user merges). Optional follow-ups if desired: split the 2 MB JS bundle (`manualChunks` for maplibre/deck), tune the flood detection preset so porto-alegre lights up, swap demo briefs for live LLM briefs once the Anthropic key funds.
 
 ---
 
