@@ -40,6 +40,8 @@ interface Props {
   detections: DetectionFeature[];
   index: EvidenceIndex | null;
   swipe: number;
+  /** Surfaces the primary map so the leader-line can project detection centroids to screen. */
+  onMapReady?: (map: maplibregl.Map | null) => void;
 }
 
 function bboxOf(aoi: Aoi): [number, number, number, number] {
@@ -135,7 +137,7 @@ function detectionLayer(
   });
 }
 
-export function MapCanvas({ aoi, before, after, detections, index, swipe }: Props) {
+export function MapCanvas({ aoi, before, after, detections, index, swipe, onMapReady }: Props) {
   const beforeRef = useRef<HTMLDivElement>(null);
   const afterRef = useRef<HTMLDivElement>(null);
   const beforeMap = useRef<maplibregl.Map | null>(null);
@@ -217,12 +219,14 @@ export function MapCanvas({ aoi, before, after, detections, index, swipe }: Prop
     afterMap.current = a;
     overlayBottom.current = oBottom;
     overlayTop.current = oTop;
+    onMapReady?.(b);
     // Prime pick handler closure via a first layer set.
     oBottom.setProps({ layers: [detectionLayer(detections, state.highlightedDetections, true, onPick)] });
     oTop.setProps({ layers: [detectionLayer(detections, state.highlightedDetections, false, onPick)] });
 
     return () => {
       ro.disconnect();
+      onMapReady?.(null);
       b.remove();
       a.remove();
       beforeMap.current = null;

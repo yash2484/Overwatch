@@ -23,6 +23,7 @@
      Both clear the 4.5:1 body-text floor with margin. (design §8 gate 5) */
   --color-ink: oklch(0.95 0.005 260);
   --color-ink-dim: oklch(0.72 0.01 260);
+  --color-ink-faint: oklch(0.64 0.01 260); /* tertiary labels; still ≥4.5:1 on panel — see §8 */
 
   /* THE accent. One hue, one meaning: the evidence link. A selected claim and the
      detections backing it share it. Nothing else in the UI may use it.

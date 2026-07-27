@@ -1,7 +1,12 @@
-import { useState } from "react";
-import { useAois, useDetections, useScenes } from "./api/hooks";
+import type * as maplibregl from "maplibre-gl";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useAois, useBrief, useDetections, useScenes } from "./api/hooks";
+import type { DetectionFeature } from "./api/types";
+import { BriefPanel } from "./components/BriefPanel";
+import { LeaderLine } from "./components/LeaderLine";
 import { MapCanvas } from "./components/MapCanvas";
 import { SwipeControl } from "./components/SwipeControl";
+import { buildEvidenceIndex } from "./evidence";
 import {
   CHANGE_COLOR_VAR,
   CHANGE_SHORT,
@@ -11,7 +16,6 @@ import {
   monthYear,
 } from "./lib/format";
 import { SelectionProvider, useSelection } from "./state/SelectionContext";
-import type { DetectionFeature } from "./api/types";
 
 function Legend({ detections }: { detections: DetectionFeature[] }) {
   const types = changeTypesPresent(detections);
@@ -22,7 +26,11 @@ function Legend({ detections }: { detections: DetectionFeature[] }) {
       style={{ background: "color-mix(in oklch, var(--color-surround) 78%, transparent)" }}
     >
       {types.map((t) => (
-        <div key={t} className="flex items-center gap-2 text-[11px]" style={{ color: "var(--color-ink-dim)" }}>
+        <div
+          key={t}
+          className="flex items-center gap-2 text-[11px]"
+          style={{ color: "var(--color-ink-dim)" }}
+        >
           <span
             className="inline-block h-2.5 w-2.5 rounded-[2px]"
             style={{ background: CHANGE_COLOR_VAR[t] ?? "var(--color-ink-dim)" }}
@@ -41,10 +49,20 @@ function Console() {
   const aoi = aois?.find((a) => a.slug === slug) ?? null;
   const { data: scenes = [] } = useScenes(slug);
   const { data: detections = [] } = useDetections(slug);
+  const { data: brief, isLoading: briefLoading } = useBrief(slug);
   const { state } = useSelection();
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const onMapReady = useCallback((m: maplibregl.Map | null) => {
+    mapRef.current = m;
+  }, []);
 
   const before = scenes[0] ?? null;
   const after = scenes.length > 1 ? scenes[scenes.length - 1] : null;
+  const index = useMemo(
+    () => (brief ? buildEvidenceIndex(brief, detections) : null),
+    [brief, detections],
+  );
+
   const finding = findingSummary(detections);
   const monitor = aoi ? (MONITOR_LABEL[aoi.vertical] ?? aoi.vertical) : "";
   const range =
@@ -77,16 +95,18 @@ function Console() {
           })}
         </div>
 
-        {/* The comprehension line: what is monitored, the finding, the time span. */}
         {aoi && (
           <div className="ml-auto flex items-baseline gap-2 text-xs">
             <span className="font-medium">{monitor}</span>
-            <span style={{ color: "var(--color-ink-dim)" }}>·</span>
+            <span style={{ color: "var(--color-ink-faint)" }}>·</span>
             <span style={{ color: "var(--color-ink-dim)" }}>{finding}</span>
             {range && (
               <>
-                <span style={{ color: "var(--color-ink-dim)" }}>·</span>
-                <span className="tnum font-[var(--font-mono)]" style={{ color: "var(--color-ink-dim)" }}>
+                <span style={{ color: "var(--color-ink-faint)" }}>·</span>
+                <span
+                  className="tnum font-[var(--font-mono)]"
+                  style={{ color: "var(--color-ink-dim)" }}
+                >
                   {range}
                 </span>
               </>
@@ -95,20 +115,32 @@ function Console() {
         )}
       </header>
 
-      <div className="relative flex-1">
-        {aoi && (
-          <MapCanvas
-            aoi={aoi}
-            before={before}
-            after={after}
-            detections={detections}
-            index={null}
-            swipe={state.swipe}
-          />
-        )}
-        <SwipeControl beforeDate={before?.captured_at} afterDate={after?.captured_at} />
-        <Legend detections={detections} />
+      <div className="flex min-h-0 flex-1">
+        <div className="relative min-w-0 flex-1">
+          {aoi && (
+            <MapCanvas
+              aoi={aoi}
+              before={before}
+              after={after}
+              detections={detections}
+              index={index}
+              swipe={state.swipe}
+              onMapReady={onMapReady}
+            />
+          )}
+          <SwipeControl beforeDate={before?.captured_at} afterDate={after?.captured_at} />
+          <Legend detections={detections} />
+        </div>
+
+        <BriefPanel
+          brief={brief}
+          index={index}
+          isLoading={briefLoading}
+          scenesReady={scenes.length > 0}
+        />
       </div>
+
+      <LeaderLine mapRef={mapRef} detections={detections} />
     </div>
   );
 }
