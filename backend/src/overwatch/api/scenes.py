@@ -80,9 +80,7 @@ def render_scene_png(scene: Scene, out_path: Path) -> Path:
     meta = _scene_meta(scene)
     geometry = to_shape(scene.window_geom)
     window = harmonize_window(get_provider().read_window(meta, geometry, BANDS), meta)
-    return render_rgb_png(
-        window, out_path, gamma=CONSOLE_GAMMA, fixed_max=CONSOLE_MAX_REFLECTANCE
-    )
+    return render_rgb_png(window, out_path, gamma=CONSOLE_GAMMA, fixed_max=CONSOLE_MAX_REFLECTANCE)
 
 
 @router.get("/aois/{slug}/scenes")
