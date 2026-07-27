@@ -144,6 +144,7 @@ export function MapCanvas({ aoi, before, after, detections, index, swipe, onMapR
   const afterMap = useRef<maplibregl.Map | null>(null);
   const overlayBottom = useRef<MapboxOverlay | null>(null);
   const overlayTop = useRef<MapboxOverlay | null>(null);
+  const didFit = useRef(false); // one-time fit-to-imagery per AOI
   const { state, dispatch } = useSelection();
 
   // Latest selection/index in refs so the picking callback never goes stale without
@@ -162,6 +163,7 @@ export function MapCanvas({ aoi, before, after, detections, index, swipe, onMapR
     // reset readiness or the raster effects fire against an unloaded style.
     setReadyB(false);
     setReadyA(false);
+    didFit.current = false;
     const bounds = bboxOf(aoi);
     const common = {
       style: BASEMAP_STYLE,
@@ -241,6 +243,21 @@ export function MapCanvas({ aoi, before, after, detections, index, swipe, onMapR
   useEffect(() => {
     if (readyB && beforeMap.current) applyRaster(beforeMap.current, "before", before);
   }, [readyB, before?.id]);
+
+  // --- default "home" view: fit tightly to the scene imagery, once per AOI ---
+  useEffect(() => {
+    const b = beforeMap.current;
+    if (!readyB || !b || !before || didFit.current) return;
+    const [w, s, e, n] = before.bounds;
+    b.fitBounds(
+      [
+        [w, s],
+        [e, n],
+      ],
+      { padding: 24, duration: 0 },
+    );
+    didFit.current = true;
+  }, [readyB, before]);
   useEffect(() => {
     if (readyA && afterMap.current) applyRaster(afterMap.current, "after", after);
   }, [readyA, after?.id]);
