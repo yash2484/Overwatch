@@ -18,6 +18,9 @@ dist/
 Thumbs.db
 .serena/
 
+# Local Compose overrides (per-machine host-port remaps, etc.) — never project code.
+docker-compose.override.yml
+
 # Local machine config, not project code. `.wslconfig.proposed` is a parked, ready-to-copy
 # WSL2 memory cap (see the header inside it) — apply it after v1 by copying to
 # %USERPROFILE%\.wslconfig. Machine-specific, so it never belongs in the tree.
