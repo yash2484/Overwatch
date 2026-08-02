@@ -11,6 +11,14 @@ Earth Search STAC items carry a raw digital-number (DN) encoding for Bottom-of-A
 - Discovered in: `c836c8e fix(phase-2): harmonize Sentinel-2 BOA offset across processing baselines`.
 - Why it matters here specifically: mixing an old-baseline scene (offset 0) with a new-baseline scene (offset -1000) in the same before/after pair produces a spurious uniform brightness shift that differencing reads as change everywhere — a false-positive generator, not a localized bug.
 
+### The metadata lies for Sentinel-2C — trust the pixels
+
+`s2:processing_baseline` and `earthsearch:boa_offset_applied` are **not reliable on their own**. Vizhinjam's 2025 after-scene `S2C_43PGK_20250211` advertises baseline `05.11` with `boa_offset_applied=False`, so `boa_dn_offset` returns `-1000` — but the DNs are already offset-free (red p50 = 314, the same scale as the 2021 before-scene). Applying the correction clipped **~90% of the scene to zero**: a near-black after-image, SSIM saturated, NDWI pinned at -1 over water, detection destroyed.
+
+- Guard: `_offset_is_present()` in `backend/src/overwatch/imagery/harmonize.py` checks the data before trusting the metadata — if removing the offset would clip **>50% of valid pixels to zero**, the DNs already lack it, so harmonization is skipped and a warning is logged.
+- **Expect this on any Sentinel-2C scene from Earth Search.** The guard self-corrects per scene, so the warning is informational, not a failure — but a new/recent AOI surfacing it is normal, not a regression.
+- General lesson: a metadata flag describing what was *done to* the pixels is a hint. Where the correction is destructive if wrong, verify against the pixels themselves.
+
 ## One acquisition, several STAC items (reprocessings)
 
 Earth Search can hold **more than one item for the same Sentinel-2 acquisition** — later reprocessings of identical pixels, distinguished by the numeric field in the id: `S2A_43PGK_20210212_0_L2A` vs `S2A_43PGK_20210212_2_L2A`.
@@ -24,9 +32,19 @@ Earth Search can hold **more than one item for the same Sentinel-2 acquisition**
 
 Raw NDVI-decrease is **not sufficient** to detect deforestation: crop harvest also drops NDVI by a similar magnitude, and a naive threshold conflates the two.
 
-- Fix: `_change_maps` in `backend/src/overwatch/detection/detector.py` now also computes absolute `<index>_before` maps (not just before/after deltas). The forest preset (`backend/src/overwatch/detection/presets.py`) ANDs the NDVI-decrease trigger with `ndvi_before >= 0.60` — the "before" image must have actually been forest-level green, not already-cleared cropland.
+- Fix: `_change_maps` in `backend/src/overwatch/detection/detector.py` now also computes absolute `<index>_before` maps (not just before/after deltas). The forest preset (`backend/src/overwatch/detection/presets.py`) ANDs the NDVI-decrease trigger with an `ndvi_before` floor — the "before" image must have actually been forest-level green, not already-cleared cropland.
 - Discovered in: `2b6c1fb feat(detection): was-forest precondition for forest preset`, validated against the real Novo Progresso AOI pair: raw NDVI-decrease detections dropped from 103 → 63 polygons after the gate; the 40 removed were cropland already cleared before the observation window, not new deforestation.
-- General lesson for other presets (port, flood): a "was it plausibly in the pre-change state to begin with" precondition is likely needed wherever the same index-delta pattern can arise from two different real-world causes. Check before shipping a new preset threshold.
+- **Current thresholds are looser than the original gate**: NDVI-decrease `0.15`, `ndvi_before >= 0.50`, min_area `3_000` m² (was 0.20 / 0.60 / 5_000). The tighter set missed clearings visible by eye. `0.50` still sits well above cropland NDVI (~0.30–0.45), so the harvest-exclusion property survives. Novo Progresso: 24 → 88 detections, largest 11 → 18 ha.
+- The precondition is **not universal**. It applies where one index-delta has two plausible real-world causes (deforestation vs. harvest). It actively *hurts* where the pre-change state varies — see the port preset below.
+
+## Port construction is structural, not spectral (SSIM-only preset)
+
+Port expansion is a **structural rebuild** of the harbour, and the pre-change surface differs by pixel: sea → built, bare fill → built, vegetation → built. Any spectral index co-signal captures one of those transitions and **vetoes the other two**.
+
+- Concretely at Vizhinjam: an NDWI-decrease co-signal fired only on the water-facing reclaimed *edge* and vetoed the bare-fill interior, which was already land by the 2021 before-scene. The terminal came back half-outlined.
+- Fix: the `port` preset is **SSIM-dissimilarity only**, threshold `0.55`, min_area `5_000` m². SSIM is agnostic to prior cover, so it fires wherever the surface was structurally rebuilt. False positives are controlled by the threshold and min_area, not by an index veto that misses most of the target.
+- Result: largest polygon 19.6 → 39.6 ha, total 31 → 83 ha, with 74.9 ha inside ~1 km of the terminal.
+- **The threshold is a completeness/precision dial, and 0.55 deliberately favours completeness.** It leaves ~14 stray coastal polygons (8.4 ha total, none over 1.05 ha, 1.5–3.9 km north) that are real 4-year change but not port construction. Tightening to `0.60` cuts the strays to 6 (4.3 ha) but shrinks the terminal body to ~30.3 ha. Confirmed visually and kept at 0.55 — the port reads cleanly, including port-adjacent buildings.
 
 ## Alembic fileConfig silently disables app loggers
 
