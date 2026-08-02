@@ -8,7 +8,7 @@ from overwatch.detection.polygonize import polygonize_mask
 from overwatch.detection.presets import VERTICAL_PRESETS
 from tests.synthetic import EPSG, TRANSFORM_10M
 
-FOREST_PRESET = VERTICAL_PRESETS["forest"]  # ndvi decrease 0.20, min area 5,000 m²
+FOREST_PRESET = VERTICAL_PRESETS["forest"]  # ndvi decrease 0.15, min area 3,000 m²
 
 
 def _mask_and_maps(
@@ -35,7 +35,7 @@ def test_single_region_geometry_area_and_stats() -> None:
 
 
 def test_region_below_min_area_is_dropped() -> None:
-    mask, maps = _mask_and_maps([(5, 10, 5, 12)])  # 35 px = 3,500 m² < 5,000
+    mask, maps = _mask_and_maps([(5, 10, 5, 10)])  # 25 px = 2,500 m² < 3,000
     assert polygonize_mask(mask, maps, FOREST_PRESET, TRANSFORM_10M, EPSG) == []
 
 

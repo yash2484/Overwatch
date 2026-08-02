@@ -36,6 +36,12 @@ def _iou(a: Polygon, b: Polygon) -> float:
     return a.intersection(b).area / a.union(b).area
 
 
+def _covers(det: Polygon, target: Polygon) -> float:
+    """Fraction of `target` covered by `det` (recall). SSIM's window spreads a detection a few
+    pixels past the true edge, so a covered footprint is a truer success signal than tight IoU."""
+    return det.intersection(target).area / target.area
+
+
 def test_forest_clearing_detected() -> None:
     before, after = _pair(FOREST, BARE)
     [det] = DETECTOR.detect(before, after, VERTICAL_PRESETS["forest"])
@@ -54,11 +60,24 @@ def test_flood_inundation_detected() -> None:
     assert det.contributing_indices["ndwi"] > 0.3
 
 
-def test_port_construction_detected() -> None:
+def test_port_reclamation_detected() -> None:
+    # The port preset is SSIM-only, so it catches construction over ANY prior cover. Sea ->
+    # concrete (reclamation) is the headline transition.
+    before, after = _pair(WATER, BUILT)
+    [det] = DETECTOR.detect(before, after, VERTICAL_PRESETS["port"])
+    assert det.change_type is ChangeType.CONSTRUCTION
+    assert _covers(det.geometry, rect_geometry(RECT)) > 0.9
+
+
+def test_port_landward_construction_also_detected() -> None:
+    # Regression guard for the fix: the OLD index-gated rule vetoed non-water builds and left
+    # the terminal body half-outlined. SSIM is agnostic to prior cover, so vegetation -> built
+    # is caught too — the whole terminal, not just its water-facing edge. (Bare -> built also
+    # is on real imagery, via texture change the flat synthetic fixtures don't model.)
     before, after = _pair(FOREST, BUILT)
     [det] = DETECTOR.detect(before, after, VERTICAL_PRESETS["port"])
     assert det.change_type is ChangeType.CONSTRUCTION
-    assert _iou(det.geometry, rect_geometry(RECT)) > 0.5
+    assert _covers(det.geometry, rect_geometry(RECT)) > 0.9
 
 
 def test_no_change_yields_no_detections() -> None:
@@ -87,7 +106,7 @@ def test_real_forest_clearing_still_detected_with_precondition() -> None:
 def test_sub_min_area_change_is_dropped() -> None:
     before = flat_window(FOREST, seed=1)
     after = flat_window(FOREST, seed=2)
-    inject_rect(after, BARE, (40, 43, 30, 34))  # 12 px = 1,200 m² < forest's 5,000 m²
+    inject_rect(after, BARE, (40, 43, 30, 34))  # 12 px = 1,200 m² < forest's 3,000 m²
     assert DETECTOR.detect(before, after, VERTICAL_PRESETS["forest"]) == []
 
 

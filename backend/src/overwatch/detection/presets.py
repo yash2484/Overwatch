@@ -40,25 +40,38 @@ VERTICAL_PRESETS: dict[str, DetectionPreset] = {
     "port": DetectionPreset(
         vertical="port",
         change_type=ChangeType.CONSTRUCTION,
+        # Construction = STRUCTURAL rebuild of the harbour, caught by SSIM dissimilarity alone.
+        # A terminal is built across MANY prior covers within one before/after window — open sea
+        # (reclamation), earlier-reclaimed bare fill, and vegetation alike. Any single-index
+        # co-signal captures only ONE of those transitions and vetoes the rest: NDVI-decrease
+        # sees veg->built but misses reclamation; NDWI-decrease sees sea->built but misses the
+        # bare-fill body already reclaimed before the window. Both leave the terminal
+        # half-outlined. SSIM is agnostic to the prior cover — it fires wherever the surface was
+        # remade — so it captures the whole build (~75 ha near the Vizhinjam terminal vs ~30 ha
+        # for the NDWI-gated rule). Specificity is the threshold (0.55 keeps strong rebuilds and
+        # drops 4-year vegetation phenology) plus min_area, not an index veto that misses most
+        # of the construction.
         rules=[
-            ThresholdRule(map="ssim_dissim", direction="increase", threshold=0.35),
-            ThresholdRule(map="ndvi", direction="decrease", threshold=0.10),
+            ThresholdRule(map="ssim_dissim", direction="increase", threshold=0.55),
         ],
         primary_map="ssim_dissim",
-        min_area_m2=1_500.0,
+        min_area_m2=5_000.0,
     ),
     "forest": DetectionPreset(
         vertical="forest",
         change_type=ChangeType.VEGETATION_LOSS,
+        # Relaxed from the initial conservative defaults: visible clearings were being missed
+        # by eye. Three levers loosened together — (1) the NDVI-drop magnitude 0.20 -> 0.15
+        # catches partial/edge clearings and hazier after-scenes; (2) the before-NDVI
+        # precondition 0.60 -> 0.50 admits edge/degraded forest that still reads well above
+        # cropland (~0.3-0.45) so harvested fields stay excluded; (3) min_area 0.5 ha -> 0.3 ha
+        # catches smaller footprints. Still AND-ed and conservative by construction.
         rules=[
-            ThresholdRule(map="ndvi", direction="decrease", threshold=0.20),
-            # Precondition: the before image must have been forest-level green. Without it,
-            # a harvested crop (which also drops NDVI) reads as deforestation. 0.6 is a
-            # tunable engineering default — healthy forest sits ~0.7-0.85, cropland ~0.3-0.5.
-            ThresholdRule(map="ndvi_before", direction="increase", threshold=0.60),
+            ThresholdRule(map="ndvi", direction="decrease", threshold=0.15),
+            ThresholdRule(map="ndvi_before", direction="increase", threshold=0.50),
         ],
         primary_map="ndvi",
-        min_area_m2=5_000.0,
+        min_area_m2=3_000.0,
     ),
     "flood": DetectionPreset(
         vertical="flood",

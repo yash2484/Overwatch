@@ -9,8 +9,11 @@ from overwatch.detection.presets import VERTICAL_PRESETS, DetectionPreset, Thres
 
 
 def test_spec_minimum_areas() -> None:
-    assert VERTICAL_PRESETS["port"].min_area_m2 == 1_500.0
-    assert VERTICAL_PRESETS["forest"].min_area_m2 == 5_000.0
+    # Port raised to 5,000: the SSIM-only construction rule catches all major structural change,
+    # so a larger floor suppresses scattered off-site polygons while keeping the terminal body.
+    assert VERTICAL_PRESETS["port"].min_area_m2 == 5_000.0
+    # Forest relaxed from the spec's 5,000 to catch smaller visible clearings.
+    assert VERTICAL_PRESETS["forest"].min_area_m2 == 3_000.0
     assert VERTICAL_PRESETS["flood"].min_area_m2 == 10_000.0
 
 
