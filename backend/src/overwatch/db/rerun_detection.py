@@ -29,7 +29,7 @@ from overwatch.detection.presets import VERTICAL_PRESETS
 from overwatch.imagery.harmonize import harmonize_window
 from overwatch.workers.tasks import BANDS, get_provider
 
-DEFAULT_SLUGS = ["vizhinjam", "novo-progresso"]
+DEFAULT_SLUGS = ["vizhinjam", "novo-progresso", "porto-alegre"]
 
 
 def rerun(slug: str) -> None:

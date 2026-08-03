@@ -46,6 +46,24 @@ Port expansion is a **structural rebuild** of the harbour, and the pre-change su
 - Result: largest polygon 19.6 → 39.6 ha, total 31 → 83 ha, with 74.9 ha inside ~1 km of the terminal.
 - **The threshold is a completeness/precision dial, and 0.55 deliberately favours completeness.** It leaves ~14 stray coastal polygons (8.4 ha total, none over 1.05 ha, 1.5–3.9 km north) that are real 4-year change but not port construction. Tightening to `0.60` cuts the strays to 6 (4.3 ha) but shrinks the terminal body to ~30.3 ha. Confirmed visually and kept at 0.55 — the port reads cleanly, including port-adjacent buildings.
 
+## "Zero detections" is ambiguous — check for a job row before touching thresholds
+
+An AOI serving **0 detections** has two completely different causes, and they look identical from the API:
+the detector ran and found nothing (a tuning problem), or **the detector never ran** (an orchestration gap).
+Scenes can exist without a job: ingestion during an AOI-viability check writes `scenes` rows directly, and
+nothing downstream requires a job to follow.
+
+- Porto-alegre sat at 0 detections for weeks, recorded in `PROGRESS.md` as "the flood engine found none
+  though the flood is visibly obvious — a detection-tuning matter," with an inherited hypothesis about
+  turbid-water NDWI false-negatives. Both were wrong: the AOI had **zero rows in `jobs`**. Running the
+  shipped preset on its existing pair, unchanged, produced **75 detections / 2,686.5 ha**.
+- **Check first:** `select count(*) from jobs where aoi_id = ...`. One query separates the two causes and
+  costs nothing. Tuning a preset against an AOI that never ran is unfalsifiable work.
+- Note that `rerun_detection.py` and `seed_briefs.py` both derive the scene pair from the AOI's *latest
+  detection*, so neither can bootstrap an AOI that has none — the first run must go through
+  `POST /aois/{slug}/jobs`. Tight date windows (±1 day around the known captures) reselect the existing
+  scene rows rather than creating new ones.
+
 ## Alembic fileConfig silently disables app loggers
 
 Running a migration **in-process** (the `migrated_db` pytest fixture, any programmatic `command.upgrade`) executes `alembic/env.py`, whose `fileConfig(...)` defaults to `disable_existing_loggers=True` — every already-instantiated app logger (e.g. `overwatch.imagery.gating`) goes dead afterward, and `caplog` assertions on their output fail *only when a migration ran earlier in the same process*.

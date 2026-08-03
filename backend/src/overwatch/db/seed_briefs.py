@@ -103,7 +103,54 @@ def _novo_progresso(rows: list[DetectionEvent]) -> tuple[str, list[Claim]]:
     return headline, claims
 
 
-SEEDERS = {"vizhinjam": _vizhinjam, "novo-progresso": _novo_progresso}
+def _porto_alegre(rows: list[DetectionEvent]) -> tuple[str, list[Claim]]:
+    total = sum(r.area_m2 for r in rows)
+    largest = rows[0]
+    all_ids = [r.id for r in rows]
+    headline = (
+        f"Porto Alegre: {_ha(total)} of new standing water detected across the Guaíba "
+        "floodplain between April and May 2024"
+    )
+    claims: list[Claim] = [
+        (
+            f"Between 18 April 2024 and 21 May 2024, {len(rows)} areas of new standing water "
+            f"totalling {_ha(total)} were detected across the observed area.",
+            "observed",
+            all_ids,
+            [],
+        ),
+        (
+            f"The largest contiguous inundation, {_ha(largest.area_m2)}, covers low-lying "
+            "floodplain adjacent to the existing water body.",
+            "observed",
+            [largest.id],
+            [],
+        ),
+        (
+            "Open water rose from roughly 37% to 48% of the observed area between the two "
+            "dates, a change consistent with river flooding rather than a local drainage event.",
+            "observed",
+            [r.id for r in rows[:5]],
+            [],
+        ),
+        (
+            "Rio Grande do Sul was reported to have suffered catastrophic flooding in "
+            "May 2024, with the Guaíba reaching record levels at Porto Alegre in early May. "
+            "The 21 May scene falls during the recession, so the detected extent is a "
+            "lower bound on the flood's peak.",
+            "context",
+            [],
+            [],
+        ),
+    ]
+    return headline, claims
+
+
+SEEDERS = {
+    "vizhinjam": _vizhinjam,
+    "novo-progresso": _novo_progresso,
+    "porto-alegre": _porto_alegre,
+}
 
 
 def _purge_briefs(session, aoi_id: int) -> None:

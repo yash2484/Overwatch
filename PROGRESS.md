@@ -29,7 +29,7 @@ faint 4.61:1 on panel); `prefers-reduced-motion` block present.
 - **Frontend dev runs on the HOST** (`cd frontend && npm run dev`, localhost:5173). The compose `frontend` service bakes source with no bind-mount and shadows the port — **`docker compose stop frontend`** before host dev. Vite proxies `/api` → localhost:8000.
 - Backend render robustness: `_scene_meta` backfills pre-Phase-6 rows (porto-alegre) + derives UTM epsg from the MGRS tile; console renders at fixed_max=3000, gamma=0.75.
 - Commits on branch (…`8b80e19` fixed-stretch) → `65b6eb7` progress → `c900795` brief-panel/leader-line → `a69fdcb` timeline/palette → `a97ae54` format.
-- **Demo caveats (honest, not bugs):** (1) ~~Vizhinjam's *after* (2025) scene still renders dark — its harmonized water reflectance is genuinely ~0 that day.~~ **WRONG, fixed 2026-08-02 (`9ebc0b5`)** — that was a real bug, not real radiometry: the S2C scene's BOA offset was subtracted twice, clipping ~90% of the scene to zero. See the detection-quality iteration below. (2) Porto-alegre has 0 detections — the flood engine found none though the flood is visibly obvious (a Phase-2 detection-tuning matter, out of Phase-6 scope); panel shows the honest "no change" empty state. (3) Briefs are seeded (marked DEMO) until the key is funded.
+- **Demo caveats (honest, not bugs):** (1) ~~Vizhinjam's *after* (2025) scene still renders dark — its harmonized water reflectance is genuinely ~0 that day.~~ **WRONG, fixed 2026-08-02 (`9ebc0b5`)** — that was a real bug, not real radiometry: the S2C scene's BOA offset was subtracted twice, clipping ~90% of the scene to zero. See the detection-quality iteration below. (2) ~~Porto-alegre has 0 detections — the flood engine found none though the flood is visibly obvious (a Phase-2 detection-tuning matter, out of Phase-6 scope).~~ **WRONG, resolved 2026-08-03** — the engine was never run on porto-alegre (the AOI had **zero job rows**; its scenes were ingested in Phase 1 and nothing followed). The shipped flood preset finds **75 detections / 2,686.5 ha** on that pair untouched. Not a tuning matter; a never-executed one. (3) Briefs are seeded (marked DEMO) until the key is funded.
 
 ### Detection-quality iteration (2026-08-01/02, on the same branch, committed `9ebc0b5`…`09c061d`)
 
@@ -58,7 +58,7 @@ A follow-on pass after the phase gate, triggered by the "dark after-image" demo 
   polygons (8.4 ha total, none over 1.05 ha, 1.5–3.9 km north) that are real 4-year change but not port work.
   0.60 would cut those to 6 (4.3 ha) but shrink the terminal body to ~30.3 ha. Rejected.
 
-*Next:* Phase 6 is demo-ready. Remaining is integration, not build: **push `phase-6-frontend-arena` + open a compare URL for the user to merge** (direct push to main is denied by policy; user merges). Optional follow-ups if desired: split the 2 MB JS bundle (`manualChunks` for maplibre/deck), tune the flood detection preset so porto-alegre lights up, swap demo briefs for live LLM briefs once the Anthropic key funds.
+*Next:* Phase 6 is demo-ready. Remaining is integration, not build: **push `phase-6-frontend-arena` + open a compare URL for the user to merge** (direct push to main is denied by policy; user merges). Optional follow-ups if desired: split the 2 MB JS bundle (`manualChunks` for maplibre/deck), swap demo briefs for live LLM briefs once the Anthropic key funds. (~~tune the flood preset so porto-alegre lights up~~ — done 2026-08-03; it needed a job run, not tuning.)
 
 ---
 
@@ -121,6 +121,17 @@ Phase 4 — Briefs + evidence chain: **implementation complete + reviewed; live 
 Phase 3 merged to main via PR #7 (`3e1097f`, 2026-07-09); merge verified byte-identical to branch tip `5cf599d`, local main synced, stale branch deleted. CI on the merge commit not yet confirmed green — `gh` is installed (2.96.0) but needs `gh auth login` before it can query Actions.
 
 ## Last verified working
+**Flood / porto-alegre resolved (2026-08-03, in-container + over HTTP):**
+Root cause was **not** detection tuning: porto-alegre had **0 job rows** — the flood detector had never
+run on it. Scenes 17/18 (`S2A_22JDM_20240418` → `S2A_22JDM_20240521`, both usable ≈1.000) were ingested
+2026-07-03 during the Phase-1 viability check and nothing followed. Diagnosed by running the real code
+path on the pair before changing anything: open water **37.5% → 47.6%** of the window, NDWI delta p95
+**+1.03**, newly-water 1,336 ha — the flood is unmistakable in the data, and the **shipped preset needed
+no change**. Submitted a real job (`6e929e81`, windows 2024-04-17…19 / 2024-05-20…22): **succeeded, 75
+detections**, reusing scene rows 17→18 with no duplicates. Persisted: **75 polygons / 2,686.5 ha, largest
+672.3 ha**, all typed `flooding`, confidence 0.898–0.966. Demo brief seeded (1199, 4 claims, 81 citations).
+Gate re-run after the seeder change: **298 passed**, ruff check clean, ruff format 120 files.
+
 **Detection-quality iteration (2026-08-02, in-container + live browser at localhost:5180):**
 `docker compose exec -T api python -m pytest -q` → **298 passed** (2 pre-existing third-party deprecation
 warnings only); `ruff check .` → All checks passed; `ruff format --check .` → **120 files already formatted**.
@@ -249,7 +260,7 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
   DOC 2.0 only (GEO 2.0 is a 404); theme identifiers verified against the live taxonomy; **Gate 1 is a toponym gate, not
   a spatial one** — GDELT exposes no geotag, and the GKG geofence was measured and rejects 100% of our true positives.
   Evidence in the Phase 5 design §2; gotcha in `CONTEXT.md`.
-- ~~Preset thresholds/morphology are **engineering defaults, not tuned numbers** (design-spec §6 verbatim): port ssim_dissim≥0.35 ∧ ndvi≤−0.10, forest ndvi≤−0.20, flood ndwi≥0.20; min-areas 1,500/5,000/10,000 m²; open→close kernel 3px.~~ **RESOLVED 2026-08-02 — port and forest are now empirically tuned against the real pairs** (port: SSIM-only ≥0.55, 5,000 m²; forest: ndvi≤−0.15 ∧ ndvi_before≥0.50, 3,000 m²), with the visual confirmation and the completeness/precision tradeoff recorded above and in `CONTEXT.md`. **Flood remains an untuned default** — porto-alegre still returns 0 detections.
+- ~~Preset thresholds/morphology are **engineering defaults, not tuned numbers** (design-spec §6 verbatim): port ssim_dissim≥0.35 ∧ ndvi≤−0.10, forest ndvi≤−0.20, flood ndwi≥0.20; min-areas 1,500/5,000/10,000 m²; open→close kernel 3px.~~ **RESOLVED 2026-08-02 — port and forest are now empirically tuned against the real pairs** (port: SSIM-only ≥0.55, 5,000 m²; forest: ndvi≤−0.15 ∧ ndvi_before≥0.50, 3,000 m²), with the visual confirmation and the completeness/precision tradeoff recorded above and in `CONTEXT.md`. **Flood's default held unchanged** — validated 2026-08-03 against the real porto-alegre pair (75 detections / 2,686.5 ha at ndwi≥0.20, 10,000 m²); the AOI's 0-detection state was a never-run job, not a threshold problem.
 
 ## Known issues / deviations
 - `python:3.12-slim` needs `libexpat1` via apt for rasterio's bundled GDAL — handled in `backend/Dockerfile`, plan updated to match.
