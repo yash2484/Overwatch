@@ -1,9 +1,12 @@
+/* IBM Plex: technical/industrial provenance, and the mono shares metrics with the sans, so a
+   column of areas lines up under its label. Not Inter (the saturated default).
+   MUST stay above `@import "tailwindcss"` — that one expands inline to ~1300 lines of rules, and
+   a font @import landing after them is no longer a leading statement, so PostCSS drops it and the
+   typography silently falls back. */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
 @import "tailwindcss";
 @import "maplibre-gl/dist/maplibre-gl.css";
-
-/* IBM Plex: technical/industrial provenance, and the mono shares metrics with the sans, so a
-   column of areas lines up under its label. Not Inter (the saturated default). */
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
 
 @theme {
   /* Tailwind's stock palette is deliberately NOT extended — these tokens replace it.
