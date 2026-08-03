@@ -43,6 +43,17 @@ def test_threshold_must_be_positive() -> None:
         ThresholdRule(map="ndvi", direction="decrease", threshold=0.0)
 
 
+def test_flood_preset_has_was_not_water_precondition() -> None:
+    # NDWI increase alone fires on water->clearer-water; the precondition requires the *before*
+    # image to have been non-water, so only land that became water counts as flooding.
+    flood = VERTICAL_PRESETS["flood"]
+    precondition = [r for r in flood.rules if r.map == "ndwi_before"]
+    assert len(precondition) == 1
+    assert precondition[0].direction == "decrease"
+    assert flood.primary_map == "ndwi"
+    assert any(r.map == "ndwi" and r.direction == "increase" for r in flood.rules)
+
+
 def test_forest_preset_has_was_forest_precondition() -> None:
     # NDVI decrease alone conflates deforestation with crop harvest; the precondition
     # requires the *before* image to have been forest-level green.

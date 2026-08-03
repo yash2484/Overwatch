@@ -35,7 +35,10 @@ Raw NDVI-decrease is **not sufficient** to detect deforestation: crop harvest al
 - Fix: `_change_maps` in `backend/src/overwatch/detection/detector.py` now also computes absolute `<index>_before` maps (not just before/after deltas). The forest preset (`backend/src/overwatch/detection/presets.py`) ANDs the NDVI-decrease trigger with an `ndvi_before` floor — the "before" image must have actually been forest-level green, not already-cleared cropland.
 - Discovered in: `2b6c1fb feat(detection): was-forest precondition for forest preset`, validated against the real Novo Progresso AOI pair: raw NDVI-decrease detections dropped from 103 → 63 polygons after the gate; the 40 removed were cropland already cleared before the observation window, not new deforestation.
 - **Current thresholds are looser than the original gate**: NDVI-decrease `0.15`, `ndvi_before >= 0.50`, min_area `3_000` m² (was 0.20 / 0.60 / 5_000). The tighter set missed clearings visible by eye. `0.50` still sits well above cropland NDVI (~0.30–0.45), so the harvest-exclusion property survives. Novo Progresso: 24 → 88 detections, largest 11 → 18 ha.
-- The precondition is **not universal**. It applies where one index-delta has two plausible real-world causes (deforestation vs. harvest). It actively *hurts* where the pre-change state varies — see the port preset below.
+- The precondition is **not universal**, and the deciding question is whether the *pre-change state* is
+  single-valued. Deforestation always starts from forest and flooding always starts from not-water, so both
+  take a precondition (see the flood section below). Port construction starts from sea *or* bare fill *or*
+  vegetation, so a precondition there vetoes most of the target — see the port section below.
 
 ## Port construction is structural, not spectral (SSIM-only preset)
 
@@ -45,6 +48,27 @@ Port expansion is a **structural rebuild** of the harbour, and the pre-change su
 - Fix: the `port` preset is **SSIM-dissimilarity only**, threshold `0.55`, min_area `5_000` m². SSIM is agnostic to prior cover, so it fires wherever the surface was structurally rebuilt. False positives are controlled by the threshold and min_area, not by an index veto that misses most of the target.
 - Result: largest polygon 19.6 → 39.6 ha, total 31 → 83 ha, with 74.9 ha inside ~1 km of the terminal.
 - **The threshold is a completeness/precision dial, and 0.55 deliberately favours completeness.** It leaves ~14 stray coastal polygons (8.4 ha total, none over 1.05 ha, 1.5–3.9 km north) that are real 4-year change but not port construction. Tightening to `0.60` cuts the strays to 6 (4.3 ha) but shrinks the terminal body to ~30.3 ha. Confirmed visually and kept at 0.55 — the port reads cleanly, including port-adjacent buildings.
+
+## Flood needs a was-NOT-water precondition (NDWI-increase fires on water→water)
+
+NDWI-increase alone cannot separate **"land became water"** from **"water became more water-like."** Suspended
+sediment raises NIR, so turbid water reads at NDWI ~+0.14 while clear water reads ~+0.54 — a delta of +0.40 on
+pixels that were already water, double the 0.20 gate. Between two dates, sediment settling or a channel
+deepening therefore reads as new flooding.
+
+- Measured on the real Porto Alegre pair (2024-04-18 → 2024-05-21): **26% of detected area, 719.7 ha, sat on
+  already-water pixels**, including one **251 ha polygon that was 100% water in the before scene**. Genuine
+  flood polygons also swelled across the channels *between* islands, merging separate landmasses into one
+  blob — the visual tell that surfaced this.
+- Fix: `ThresholdRule(map="ndwi_before", direction="decrease", threshold=0.05)` — the pixel must have read
+  `ndwi_before <= -0.05` (non-water) before it can count as flooded. Result: contamination **26.0% → 0.07%**,
+  the 251 ha artefact gone, the largest polygon 672.3 → 474.9 ha at 0.00% already-water.
+- `-0.05` rather than `0.0` because `ThresholdRule.threshold` is constrained `gt=0`, and because the land/water
+  NDWI boundary here is sharp (median `ndwi_before` inside true flood area is **-0.73**). The margin costs
+  ~19 ha of marginal wet-soil pixels and buys clean separation; the sweep from 0.00 to 0.20 moves total area
+  only 2029 → 1956 ha, so the result is not threshold-sensitive.
+- Note the direction convention: `direction="decrease"` means `value <= -threshold`, so a "must be low"
+  precondition is expressed as a decrease rule (see `rule_mask`).
 
 ## "Zero detections" is ambiguous — check for a job row before touching thresholds
 

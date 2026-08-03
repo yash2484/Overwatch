@@ -13,6 +13,7 @@ from tests.synthetic import (
     CROP,
     FOREST,
     SCL_CLOUD_HIGH,
+    TURBID_WATER,
     WATER,
     flat_window,
     inject_rect,
@@ -58,6 +59,17 @@ def test_flood_inundation_detected() -> None:
     assert det.change_type is ChangeType.FLOODING
     assert _iou(det.geometry, rect_geometry(RECT)) > 0.5
     assert det.contributing_indices["ndwi"] > 0.3
+
+
+def test_flood_ignores_water_that_merely_clears() -> None:
+    # Regression guard: NDWI-increase alone cannot tell "land became water" from "water got
+    # clearer/deeper". Sediment settling between two dates raises NDWI well past the 0.20 gate
+    # on pixels that were already water. On the real Porto Alegre pair that put 26% of detected
+    # area (719.7 ha) on already-water pixels, including one 251 ha polygon that was 100% water
+    # in the before scene. Flooding means land that became water; a was-NOT-water precondition
+    # is what makes the distinction.
+    before, after = _pair(TURBID_WATER, WATER)
+    assert DETECTOR.detect(before, after, VERTICAL_PRESETS["flood"]) == []
 
 
 def test_port_reclamation_detected() -> None:

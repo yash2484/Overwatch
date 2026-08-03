@@ -11,7 +11,11 @@ from overwatch.imagery.models import AOIWindow
 
 FOREST = {"red": 400, "green": 600, "blue": 300, "nir": 3500}  # NDVI ~0.79
 BARE = {"red": 2200, "green": 1900, "blue": 1500, "nir": 2600}  # NDVI ~0.08
-WATER = {"red": 300, "green": 500, "blue": 600, "nir": 150}
+WATER = {"red": 300, "green": 500, "blue": 600, "nir": 150}  # NDWI ~+0.54: clear open water
+# Sediment-laden water: suspended solids raise NIR, so NDWI stays positive but much lower
+# (~+0.14). Turbid -> clear is a water-to-water transition that still clears an NDWI-increase
+# threshold, which is how flood detection acquires false positives over pre-existing water.
+TURBID_WATER = {"red": 700, "green": 800, "blue": 800, "nir": 600}
 BUILT = {"red": 2600, "green": 2400, "blue": 2200, "nir": 2300}
 CROP = {"red": 1500, "green": 1600, "blue": 1000, "nir": 3500}  # NDVI ~0.40: green but not forest
 

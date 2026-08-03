@@ -128,9 +128,19 @@ run on it. Scenes 17/18 (`S2A_22JDM_20240418` → `S2A_22JDM_20240521`, both usa
 path on the pair before changing anything: open water **37.5% → 47.6%** of the window, NDWI delta p95
 **+1.03**, newly-water 1,336 ha — the flood is unmistakable in the data, and the **shipped preset needed
 no change**. Submitted a real job (`6e929e81`, windows 2024-04-17…19 / 2024-05-20…22): **succeeded, 75
-detections**, reusing scene rows 17→18 with no duplicates. Persisted: **75 polygons / 2,686.5 ha, largest
-672.3 ha**, all typed `flooding`, confidence 0.898–0.966. Demo brief seeded (1199, 4 claims, 81 citations).
-Gate re-run after the seeder change: **298 passed**, ruff check clean, ruff format 120 files.
+detections**, reusing scene rows 17→18 with no duplicates.
+
+**Then a real false positive, caught by eye and fixed (same day).** User review of the overlay found polygons
+spanning water that was water in *both* scenes, bridging the channels between islands. Measured: **26% of
+detected area (719.7 ha) sat on already-water pixels**, including a **251 ha polygon that was 100% water
+beforehand**. Cause: NDWI-increase cannot separate "land became water" from "water got clearer" — turbid water
+(~+0.14) to clear water (~+0.54) is a +0.40 delta on already-water pixels, double the 0.20 gate. Fixed with a
+**was-NOT-water precondition** (`ndwi_before <= -0.05`), the flood analogue of forest's was-forest gate; TDD
+red→green on a synthetic turbid→clear pair. Contamination **26.0% → 0.07%**; the 251 ha artefact gone; largest
+polygon 672.3 → **474.9 ha at 0.00% already-water**.
+
+Final persisted state: **66 polygons / 1,932.7 ha, largest 474.9 ha**, all typed `flooding`. Demo brief seeded
+(1254, 4 claims, 72 citations). Gate: **300 passed**, ruff check clean, ruff format 120 files.
 
 **Detection-quality iteration (2026-08-02, in-container + live browser at localhost:5180):**
 `docker compose exec -T api python -m pytest -q` → **298 passed** (2 pre-existing third-party deprecation
@@ -260,7 +270,7 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
   DOC 2.0 only (GEO 2.0 is a 404); theme identifiers verified against the live taxonomy; **Gate 1 is a toponym gate, not
   a spatial one** — GDELT exposes no geotag, and the GKG geofence was measured and rejects 100% of our true positives.
   Evidence in the Phase 5 design §2; gotcha in `CONTEXT.md`.
-- ~~Preset thresholds/morphology are **engineering defaults, not tuned numbers** (design-spec §6 verbatim): port ssim_dissim≥0.35 ∧ ndvi≤−0.10, forest ndvi≤−0.20, flood ndwi≥0.20; min-areas 1,500/5,000/10,000 m²; open→close kernel 3px.~~ **RESOLVED 2026-08-02 — port and forest are now empirically tuned against the real pairs** (port: SSIM-only ≥0.55, 5,000 m²; forest: ndvi≤−0.15 ∧ ndvi_before≥0.50, 3,000 m²), with the visual confirmation and the completeness/precision tradeoff recorded above and in `CONTEXT.md`. **Flood's default held unchanged** — validated 2026-08-03 against the real porto-alegre pair (75 detections / 2,686.5 ha at ndwi≥0.20, 10,000 m²); the AOI's 0-detection state was a never-run job, not a threshold problem.
+- ~~Preset thresholds/morphology are **engineering defaults, not tuned numbers** (design-spec §6 verbatim): port ssim_dissim≥0.35 ∧ ndvi≤−0.10, forest ndvi≤−0.20, flood ndwi≥0.20; min-areas 1,500/5,000/10,000 m²; open→close kernel 3px.~~ **RESOLVED 2026-08-02 — port and forest are now empirically tuned against the real pairs** (port: SSIM-only ≥0.55, 5,000 m²; forest: ndvi≤−0.15 ∧ ndvi_before≥0.50, 3,000 m²), with the visual confirmation and the completeness/precision tradeoff recorded above and in `CONTEXT.md`. **Flood is now tuned too** — the AOI's 0-detection state was a never-run job, not a threshold problem, but running it exposed a real one: NDWI-increase alone fires on water→clearer-water. Flood now carries a was-NOT-water precondition (`ndwi_before ≤ −0.05`) alongside `ndwi ≥ 0.20` / 10,000 m² → **66 detections / 1,932.7 ha**, already-water contamination 26.0% → 0.07%. All three presets are now empirically tuned against their real pairs.
 
 ## Known issues / deviations
 - `python:3.12-slim` needs `libexpat1` via apt for rasterio's bundled GDAL — handled in `backend/Dockerfile`, plan updated to match.

@@ -8,7 +8,7 @@ from overwatch.detection.models import ChangeType
 
 # "<index>" gates on the after-minus-before delta; "<index>_before" gates on the
 # absolute index in the before image (a precondition on prior land cover).
-MapName = Literal["ndvi", "ndwi", "nbr", "ssim_dissim", "ndvi_before"]
+MapName = Literal["ndvi", "ndwi", "nbr", "ssim_dissim", "ndvi_before", "ndwi_before"]
 
 
 class ThresholdRule(BaseModel):
@@ -76,7 +76,20 @@ VERTICAL_PRESETS: dict[str, DetectionPreset] = {
     "flood": DetectionPreset(
         vertical="flood",
         change_type=ChangeType.FLOODING,
-        rules=[ThresholdRule(map="ndwi", direction="increase", threshold=0.20)],
+        # NDWI-increase alone cannot separate "land became water" from "water became more
+        # water-like". Sediment settling or a channel deepening between two dates raises NDWI
+        # by more than the 0.20 gate on pixels that were ALREADY water, so open water reads as
+        # newly flooded: on the real Porto Alegre pair, 26% of detected area (719.7 ha) sat on
+        # already-water pixels, including a 251 ha polygon that was 100% water beforehand, and
+        # genuine flood polygons swelled across the channels between islands.
+        # The was-NOT-water precondition is the flood analogue of forest's was-forest gate.
+        # -0.05 rather than 0.0 because the land/water NDWI boundary here is sharp (median
+        # ndwi_before inside true flood area is -0.73), so the small negative margin costs
+        # ~19 ha of marginal wet-soil pixels and buys a clean separation.
+        rules=[
+            ThresholdRule(map="ndwi", direction="increase", threshold=0.20),
+            ThresholdRule(map="ndwi_before", direction="decrease", threshold=0.05),
+        ],
         primary_map="ndwi",
         min_area_m2=10_000.0,
     ),
