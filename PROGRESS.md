@@ -62,9 +62,10 @@ A follow-on pass after the phase gate, triggered by the "dark after-image" demo 
 
 Triggered by two user-reported false positives on the live console. Both were fixed with **free**
 signal (no new bands, no re-fetch, no LLM). Verified in-container: **334 passed**, ruff check +
-format clean (130 files), plus a read-only A/B against the real scene pairs — the DB was *not*
-re-run, because `evidence_links.detection_id` is `ondelete=CASCADE` and a replace-set would strip
-the evidence off the three paid `claude-opus-4-8` briefs.
+format clean (130 files), plus a read-only A/B against the real scene pairs. The A/B ran *before*
+any DB write on purpose: `evidence_links.detection_id` is `ondelete=CASCADE`, so a replace-set
+strips the evidence off any brief over that scene pair. Once the numbers were confirmed and the
+user approved the spend, detection was re-run and all three briefs regenerated (see below).
 
 | AOI | vertical | previous | now | change |
 |---|---|---|---|---|
@@ -229,6 +230,30 @@ The user funded a key ($0.79). All three AOIs now carry **real Anthropic-generat
   citing **7 real news articles with zero detection links**, framed as reported speech ("News
   outlets reported that…"). This is Phase 5's blocked item A — *articles cited in a validated
   brief, proven by the SQL join* — now **done**.
+
+**REGENERATED ON SONNET 5 (2026-08-13)** after the detection fixes above changed every AOI's
+numbers, making the Opus briefs factually stale. User approved a **$0.22 ceiling**, which Opus
+could not meet (the same volume reprices to $0.306). Method: re-run detection first (free), probe
+with the smallest brief, then extrapolate before committing. All three **validated, 0 dangling
+links**; the Opus and `demo-seed` briefs are now `stale` (`replace_detections` demotes any brief
+over that scene pair *before* deleting the evidence it cited, so nothing dangled at any point).
+
+| AOI | brief | attempts | input | output | cost @ $3/$15 |
+|---|---|---|---|---|---|
+| vizhinjam | 1492 | 1 | 1,569 | 492 | $0.0121 |
+| porto-alegre | 1493 | 1 | 3,676 | 4,076 | $0.0722 |
+| novo-progresso | 1494 | 2 | 7,422 | 7,062 | $0.1282 |
+| **total** | | | **12,667** | **11,630** | **$0.2125** (**$0.1416** at intro $2/$10) |
+
+- **Sonnet 5 was cheaper than the token counts alone suggest**: it validated vizhinjam and
+  porto-alegre in **one** attempt where Opus needed two, so the retry tax mostly vanished.
+- **Gate 3 self-healed again, on the model that costs less.** Novo-progresso attempt 1 quoted
+  1,637,100 m² against 1,480,000 m² of linked detections and quoted three individual clearing
+  sizes against the *sum* of the three it linked; six `area_mismatch` violations, all rejected.
+  Attempt 2 validated. The guard rail is model-independent, which is the point of putting the
+  arithmetic in the validator rather than trusting the generator.
+- **Set `OVERWATCH_ANTHROPIC_MODEL` to pick the model** — the default in `config.py` is still
+  `claude-opus-4-8`, so the shipped briefs came from an env override, not a code change.
 - ⚠️ **`seed_briefs` purges every brief for an AOI**, so re-running it would have destroyed the
   paid output. It now refuses when a validated non-`demo-seed` brief exists (`--force` overrides);
   verified live — all three skipped, real briefs survived.
