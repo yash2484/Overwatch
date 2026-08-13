@@ -305,6 +305,17 @@ over that scene pair *before* deleting the evidence it cited, so nothing dangled
   arithmetic in the validator rather than trusting the generator.
 - **Set `OVERWATCH_ANTHROPIC_MODEL` to pick the model** — the default in `config.py` is still
   `claude-opus-4-8`, so the shipped briefs came from an env override, not a code change.
+
+**Regenerated once more (2026-08-13, final)** after the flood revert and the port re-anchor moved
+both AOIs' numbers again. porto-alegre (2 attempts, 8,206 in / 2,431 out, $0.0611) and vizhinjam
+(2 attempts, 4,094 in / 1,397 out, $0.0332); novo-progresso untouched and still valid. **All three
+validated, 0 dangling evidence links**, and porto-alegre's carries **4 article links** alongside 7
+detection links — Gate 4's observed/reported wall holding on live data. Session total at standard
+rates: $0.306 (Opus, superseded) + $0.2125 + $0.0943 = **$0.613** of the $0.79 funded.
+
+*Live demo state:* porto-alegre 66 det / 1,932.7 ha · novo-progresso 88 / 163.7 ha ·
+vizhinjam 16 / 78.9 ha, each with a validated Sonnet 5 brief whose every numeric claim
+cross-checks against its own linked detections.
 - ⚠️ **`seed_briefs` purges every brief for an AOI**, so re-running it would have destroyed the
   paid output. It now refuses when a validated non-`demo-seed` brief exists (`--force` overrides);
   verified live — all three skipped, real briefs survived.
