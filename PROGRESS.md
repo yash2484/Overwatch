@@ -100,6 +100,32 @@ user approved the spend, detection was re-run and all three briefs regenerated (
   zero detections instead of a silently disabled prior. `MapName` gained `ndwi_after`; the detector
   gained an `_after` branch symmetric with `_before`.
 
+### Fixed: the after-pane sometimes rendered bare basemap under the polygons (2026-08-13)
+
+User report: "sometimes it opens like this", with the right pane showing the dark basemap and
+detection polygons but **no imagery** — which reads as the detector outlining dry green land,
+because the visible left pane is the *before* scene where those islands had not yet flooded.
+
+Ruled out first, with evidence, not by inspection: the UI pair matches the detection pair for all
+three AOIs (checked `scenes[0]/scenes[-1]` against `before_scene_id`/`after_scene_id`); every
+scene PNG is cached; `GET /aois/{slug}/scenes` has a stable `ORDER BY captured_at, id`.
+
+Root cause in `applyRaster`: it correctly refuses to touch sources before `isStyleLoaded()`, but
+**nothing ever re-ran it**. The caller's readiness flag flips exactly once (maplibre `load`) and
+the scene id never changes afterwards. The *after* map loses that race routinely because it is
+jump-synced to the before map's camera in the same tick its flag flips — the jump starts basemap
+tile loads, so `isStyleLoaded()` reads false right when the effect fires. The raster was dropped
+permanently until a reload happened to win.
+
+- Extracted to `frontend/src/components/mapRaster.ts` so the readiness path is testable against a
+  fake map; **4 new tests** (18 frontend total). The retry now lives in `applyRaster` rather than
+  depending on the caller to re-fire: a one-shot `once("idle")` per map+key, deduped so scene
+  switches don't stack listeners, replaying the *latest* requested scene.
+- Gate: tsc clean, 18 frontend tests, `vite build` succeeds. **Browser confirmation still pending**
+  — the repro is intermittent and no browser driver is available here, so the loop is unit-level.
+- ⚠ **Vitest needs `--pool=threads` on this Windows box.** The default forks pool times out at 60 s
+  waiting for a worker; with threads the same suite runs in ~2 s.
+
 *Next:* Phase 6 is demo-ready. Remaining is integration, not build: **push `phase-6-frontend-arena` + open a compare URL for the user to merge** (direct push to main is denied by policy; user merges). Optional follow-ups if desired: split the 2 MB JS bundle (`manualChunks` for maplibre/deck), swap demo briefs for live LLM briefs once the Anthropic key funds. (~~tune the flood preset so porto-alegre lights up~~ — done 2026-08-03; it needed a job run, not tuning.)
 
 ---

@@ -2,7 +2,7 @@ import { GeoJsonLayer } from "@deck.gl/layers";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import * as maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import { sceneImageUrl } from "../api/client";
+import { applyRaster } from "./mapRaster";
 import type {
   Aoi,
   DetectionFeature,
@@ -67,35 +67,6 @@ function tintBasemap(map: maplibregl.Map) {
   }
 }
 
-/** Insert (or replace) a scene raster, clipped below the first label layer for legibility. */
-function applyRaster(map: maplibregl.Map, key: string, scene: SceneSummary | null) {
-  // Never touch sources/layers before the style is up — doing so throws "Style is not done
-  // loading", which is uncaught and would blank the app. The ready flag re-fires this once
-  // the style loads.
-  if (!map.isStyleLoaded()) return;
-  const id = `scene-${key}`;
-  if (map.getLayer(id)) map.removeLayer(id);
-  if (map.getSource(id)) map.removeSource(id);
-  if (!scene) return;
-  const [w, s, e, n] = scene.bounds;
-  map.addSource(id, {
-    type: "image",
-    url: sceneImageUrl(scene.id),
-    coordinates: [
-      [w, n],
-      [e, n],
-      [e, s],
-      [w, s],
-    ],
-  });
-  const firstSymbol = map
-    .getStyle()
-    .layers?.find((l: { type: string }) => l.type === "symbol")?.id;
-  map.addLayer(
-    { id, type: "raster", source: id, paint: { "raster-opacity": 1, "raster-fade-duration": 0 } },
-    firstSymbol,
-  );
-}
 
 function detectionLayer(
   detections: DetectionFeature[],
