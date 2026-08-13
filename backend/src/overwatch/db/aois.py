@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from overwatch.aois import DEMO_ORDER
 from overwatch.db.models import Aoi
 
 
@@ -60,7 +61,15 @@ def get_aoi(session: Session, slug: str) -> Aoi | None:
 
 
 def list_aois(session: Session) -> list[Aoi]:
-    return list(session.scalars(select(Aoi).order_by(Aoi.slug)))
+    """Showcase AOIs in `DEMO_ORDER` first, then everything else alphabetically.
+
+    The console has no ordering control of its own — it renders this list as its nav and
+    treats the first entry as the default selection — so the demo's opening view is decided
+    here. User-created AOIs are not part of the showcase narrative and sort after it.
+    """
+    rank = {slug: i for i, slug in enumerate(DEMO_ORDER)}
+    rows = session.scalars(select(Aoi).order_by(Aoi.slug))
+    return sorted(rows, key=lambda a: (rank.get(a.slug, len(rank)), a.slug))
 
 
 def delete_aoi(session: Session, slug: str) -> bool:

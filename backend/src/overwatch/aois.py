@@ -20,6 +20,14 @@ class AOI(BaseModel):
         return box(*self.bbox)
 
 
+# Presentation order for the console, deliberately NOT the seed order or alphabetical.
+# The frontend takes `aois[0]` as its default selection and renders the nav in list order,
+# so this single sequence decides what a visitor sees first. Porto Alegre leads: the flood
+# is the most legible change to a viewer who has never read a satellite image — a city
+# turning to water needs no explanation, where a port build-out and a forest clearing both
+# reward a second look. Deforestation second, port last.
+DEMO_ORDER: tuple[str, ...] = ("porto-alegre", "novo-progresso", "vizhinjam")
+
 SHOWCASE_AOIS: dict[str, AOI] = {
     aoi.slug: aoi
     for aoi in [
