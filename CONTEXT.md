@@ -70,6 +70,38 @@ deepening therefore reads as new flooding.
 - Note the direction convention: `direction="decrease"` means `value <= -threshold`, so a "must be low"
   precondition is expressed as a decrease rule (see `rule_mask`).
 
+## OSCD: read `cm.tif` and `imgs_*_rect`, never `cm.png` or `imgs_*`
+
+Two file-choice traps in the benchmark archives, both of which fail **silently** and produce a
+plausible-looking but meaningless number.
+
+- **Labels.** `<city>/cm/<city>-cm.tif` is authoritative and encodes **1 = unchanged, 2 = changed**.
+  The sibling `cm.png` is not interchangeable: abudhabi's is **RGBA with an all-255 alpha channel**,
+  so the natural "any non-zero is change" decoder marks **100% of the scene changed**; aguasclaras'
+  carries antialiasing artefacts spanning 150+ distinct values. `decode_cm()` therefore rejects any
+  value outside `{1, 2}` — the guard exists because the assumption was wrong on first contact with
+  the data, not in theory.
+- **Imagery.** Use `<city>/imgs_1_rect/` and `imgs_2_rect/` — the coregistered pair on one grid,
+  matching the label raster exactly. The plain `imgs_1/` / `imgs_2/` folders hold native per-band
+  resolutions (10/20/60 m) and are **not pixel-aligned between dates**, so differencing them is
+  meaningless. Band files in `_rect` are plain `B02.tif`…`B12.tif` plus `B8A.tif`.
+- Band mapping is written out explicitly (`BAND_FILE`) rather than derived from the plane index:
+  the "+1" rule that maps plane 1 → `B02` holds only to `B08`, because **B8A sits between B08 and
+  B09**. A derived rule would drift the moment anyone reads a SWIR band.
+
+## Score the polygons, not the threshold mask
+
+Accuracy is measured by rasterising the detections the detector *emits* and comparing those to the
+truth mask — not by scoring `rule_mask`'s output directly.
+
+- This is what makes the number mean *"what `GET /aois/{slug}/detections` returns"* rather than
+  *"what the thresholder saw"*. Morphology (open→close) and the `min_area_m2` floor both change the
+  answer, and both are part of the shipped behaviour, so both must be inside the measurement.
+- Consequence worth expecting: the min-area floor costs recall on benchmarks full of small changes.
+  That is a real property of the shipped system, not a measurement artefact to tune away.
+- `overwatch.eval` must never be imported by `overwatch.detection` — scoring code cannot be allowed
+  to influence what is detected.
+
 ## Gate 3 sums the linked detections — one claim, one quantity
 
 The numeric validator compares a quoted area against the **sum of every detection linked to that

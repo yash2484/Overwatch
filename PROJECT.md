@@ -235,8 +235,20 @@ The `ChangeDetector` interface makes this a drop-in: train/fine-tune a change-se
 > evidence-chain claim — the interview-defensible core — is untouched and remains exactly as strong.
 
 **Claims requiring empirical verification before going on paper** (AgentProof discipline):
-- Any detection accuracy/precision figure — requires hand-labeled ground truth on the showcase AOIs.
-- Any latency/throughput number (e.g., "AOI-to-brief in under N minutes").
+- ~~Any detection accuracy/precision figure — requires hand-labeled ground truth on the showcase AOIs.~~
+  **MEASURED 2026-08-04 for the construction preset**, against OSCD (§7's benchmark) rather than
+  hand-labelling: **precision 0.345, recall 0.526, F1 0.417, IoU 0.263** on the 10-scene held-out
+  test split, with the shipped preset untuned against the benchmark. Sayable on paper, with its
+  scope attached — two constraints on how it may be quoted, and the detail to have ready:
+  - **It covers the construction (`port`) preset only** — OSCD labels urban change. The `forest`
+    and `flood` presets remain unmeasured and no figure may be implied for them.
+  - Quote the **test** split. The train split is weaker (F1 0.272) because those scenes contain
+    less change; omitting it would be cherry-picking, so report both or neither.
+  - Supporting detail worth having ready for an interviewer: recall holds near 0.52 on both splits
+    while precision follows the scene's change rate, and a threshold sweep puts the shipped 0.55 at
+    the F1 maximum — a value set on Vizhinjam imagery before the dataset was downloaded. Evidence
+    and per-scene tables in `PROGRESS.md`; harness in `overwatch.eval`.
+- Any latency/throughput number (e.g., "AOI-to-brief in under N minutes") — **still unmeasured.**
 - Scene/AOI counts — must reflect actually-processed volumes.
 
 ---

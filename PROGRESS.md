@@ -121,6 +121,50 @@ Phase 4 — Briefs + evidence chain: **implementation complete + reviewed; live 
 Phase 3 merged to main via PR #7 (`3e1097f`, 2026-07-09); merge verified byte-identical to branch tip `5cf599d`, local main synced, stale branch deleted. CI on the merge commit not yet confirmed green — `gh` is installed (2.96.0) but needs `gh auth login` before it can query Actions.
 
 ## Last verified working
+**DETECTION ACCURACY MEASURED — the project's first precision/recall numbers (2026-08-04).**
+`PROJECT.md` §11 had flagged that every accuracy claim needed hand-labelled ground truth, so
+none existed. OSCD (Onera Satellite Change Detection — the benchmark §7 already named) supplies
+it without anyone hand-labelling: 24 Sentinel-2 pairs with human-drawn pixel-level change masks,
+14 train / 10 held-out test. Run with
+`docker compose exec -T api python -m overwatch.eval.run_oscd --split test`.
+
+**Shipped `port` preset, untuned against the benchmark** (SSIM-only ≥0.55, min_area 5,000 m²):
+
+| split | scenes | precision | recall | F1 | IoU |
+|---|---|---|---|---|---|
+| **test (held out)** | 10 | 0.345 | **0.526** | **0.417** | **0.263** |
+| train | 14 | 0.185 | 0.514 | 0.272 | 0.158 |
+
+**Threshold sweep, test split** — the shipped 0.55 is the **F1 maximum**:
+
+| threshold | 0.40 | 0.45 | 0.50 | **0.55** | 0.60 | 0.65 | 0.70 |
+|---|---|---|---|---|---|---|---|
+| precision | 0.238 | 0.273 | 0.309 | **0.345** | 0.382 | 0.413 | 0.441 |
+| recall | 0.725 | 0.662 | 0.594 | **0.526** | 0.449 | 0.377 | 0.307 |
+| F1 | 0.359 | 0.387 | 0.406 | **0.417** | 0.413 | 0.394 | 0.362 |
+
+- **What the numbers say:** recall is stable near **0.52 on both splits** while precision tracks how
+  much change a scene actually contains — strong where change is common (montpellier F1 0.712,
+  lasvegas 0.687, dubai 0.560) and poor below ~1% change (valencia 0.019, saclay_w 0.097, norcia
+  0.074). The detector finds roughly half the labelled change and over-fires where change is rare.
+  That is the honest characterisation, and it points at precision as the lever worth working on.
+- **The 0.55 agreement is external validation, not fitting.** That threshold was set by eye on the
+  Vizhinjam imagery (commit `6f9524f`, 2026-08-02) — before this dataset was downloaded — and lands
+  on the F1 optimum of an independent 10-scene benchmark. Precision rises monotonically across the
+  sweep and recall falls monotonically; the curve has no anomalies.
+- ⚠️ **Scope of the claim: OSCD labels urban change, so this scores the construction preset only.**
+  The vegetation (`forest`) and water (`flood`) presets have **no public benchmark and remain
+  unmeasured** — they still need hand-labelled truth on their own AOIs. Do not generalise these
+  figures to them.
+- **Method:** the detector's *emitted polygons* are rasterised and scored, not its internal
+  threshold mask, so the figure is what a consumer of `GET /aois/{slug}/detections` actually gets —
+  morphology and the min-area floor included. Micro-average (pixels pooled across scenes).
+- **Caveats on the comparison:** OSCD ships L1C top-of-atmosphere imagery where the pipeline
+  normally reads L2A surface reflectance (the indices and SSIM are relative, so it holds, but the
+  radiometry is not identical), and OSCD has no SCL plane, so no pixel is excluded as cloud.
+- Built TDD as `overwatch.eval` (metrics / OSCD adapter / rasteriser / runner), **18 new tests**.
+  Gate: **320 passed**, ruff check clean, ruff format 128 files. Commit `2398aa7`.
+
 **LIVE LLM BRIEFS — Phase 4 live gate GREEN and Phase 5 item A GREEN (2026-08-04, over HTTP).**
 The user funded a key ($0.79). All three AOIs now carry **real Anthropic-generated briefs**
 (`model=claude-opus-4-8`), replacing the hand-authored `demo-seed` ones. Total spend **$0.306**
