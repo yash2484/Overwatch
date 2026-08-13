@@ -15,7 +15,11 @@ def rule_mask(
         values = maps[rule.map]
         if rule.direction == "decrease":
             out &= values <= -rule.threshold
-        else:
+        elif rule.direction == "increase":
+            out &= values >= rule.threshold
+        elif rule.direction == "at_most":
+            out &= values <= rule.threshold
+        else:  # at_least
             out &= values >= rule.threshold
     return out
 

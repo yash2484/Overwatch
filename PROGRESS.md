@@ -69,20 +69,38 @@ user approved the spend, detection was re-run and all three briefs regenerated (
 
 | AOI | vertical | previous | now | change |
 |---|---|---|---|---|
-| porto-alegre | flood | 66 det / 1,932.7 ha | 68 det / **925.8 ha** | −1,006.9 ha (48% kept) |
+| porto-alegre | flood | 66 det / 1,932.7 ha | 66 det / 1,932.7 ha | **unchanged — gate withdrawn, see below** |
 | vizhinjam | port | 22 det / 83.3 ha | 14 det / **77.8 ha** | −5.5 ha (93% kept) |
 | novo-progresso | forest | 88 det / 163.7 ha | 88 det / 163.7 ha | unchanged (no gate added) |
 
-- **Flood: an absolute floor on the AFTER image (`ndwi_after >= 0.05`).** The was-NOT-water
-  precondition shipped on 2026-08-03 catches water→clearer-water but is blind to its mirror image:
-  land that merely gets **darker**. Shading a canopy suppresses NIR harder than green, so NDWI
-  climbs ~0.37 (past the 0.20 delta gate) from −0.71 to −0.33 — clearing the was-not-water gate
-  *because shaded forest was never water* — and a green hillside gets outlined as flood. **Half the
-  detected area was this**: 1,006.9 ha of 1,932.7 ha. Detection *count* rises 66→68 because clipping
-  splits large polygons; area is the meaningful metric. Threshold sweep (0.02/0.05/0.10/0.15/0.20/
-  0.30 → 962.8/925.8/834.8/758.8/673.5/497.4 ha) shows no knee, so 0.05 is chosen on principle, not
-  on the curve: it pairs with the −0.05 before-gate as one symmetric crossing of McFeeters' 0.0
-  water boundary. Costs only 37 ha versus 0.02; going to 0.20 would risk genuinely turbid floodwater.
+- **Flood: an absolute after-image floor was shipped and WITHDRAWN the same day. It was wrong.**
+  The reasoning was sound and the instrument was not. The was-NOT-water precondition is blind to
+  land that merely gets **darker** — shading a canopy suppresses NIR harder than green, so NDWI
+  climbs ~0.37 (past the 0.20 delta gate) from −0.71 to −0.33 while clearing the was-not-water gate
+  *because shaded forest was never water* — so `ndwi_after >= 0.05` was added to demand the pixel
+  actually BE water. It cut 1,932.7 ha to 925.8 ha, and I recorded that 1,006.9 ha as false
+  positives. **It was mostly real flood.** Porto Alegre's floodwater is heavily sediment-laden, and
+  suspended solids raise NIR, which drags NDWI down: the gate rejected the brown turbid water that
+  *is* the flood. Caught by the user against the console, not by the sweep — the sweep showed a
+  smooth curve with no knee, which I read as "pick on principle" when it actually meant "this index
+  does not separate these two populations".
+- **`ndvi_after` was measured as the replacement and also rejected.** NDVI is far more
+  shade-invariant, so it should discriminate better, and its curve is smooth too: `<= 0.00` keeps
+  57.6% of baseline, `<= 0.10` 64.3%, `<= 0.30` 76.4%, `<= 0.50` 92.2% — by which point it no longer
+  gates anything. **No absolute threshold on red/green/blue/nir separates turbid floodwater from wet
+  vegetation here**, because the scene is a continuum: open brown water, shallow water over grass,
+  partly submerged canopy. The lesson worth keeping: a sweep with no knee is evidence the index is
+  wrong, not licence to choose a value from first principles.
+- **The real fix needs SWIR, which is not fetched** (`_KEEP_ASSETS` is red/green/blue/nir/scl).
+  Water absorbs SWIR almost totally whatever its sediment load; shaded and wet vegetation does not.
+  MNDWI = (green − swir16)/(green + swir16), or AWEI_sh with its explicit shadow term, makes the cut
+  NDWI and NDVI cannot. Two more assets plus a re-fetch, so it is a scoped follow-up. Until then
+  flood **prefers recall over precision on purpose**, and the shaded-land false positive is tracked
+  by an `xfail(strict=True)` in `test_detector.py` rather than quietly dropped.
+- **Rule grammar gained `at_most`/`at_least`** (kept from the attempt): `increase`/`decrease` read
+  the threshold as a magnitude about zero, which cannot express a bound whose sign disagrees with
+  its direction ("NDVI at most +0.10"). The new directions take the threshold literally, so 0.0 and
+  negatives are ordinary values. No shipped preset uses them yet; the SWIR work will.
 - **Port: the first *spatial* prior (`near_water_m=1000`, `near_water_min_body_m2=100_000`).** Inland
   buildings scored `ssim_dissim` ~0.87, **as high as the terminal itself** — they are real
   construction, so no threshold separates them (raising it drops the terminal too). Only location

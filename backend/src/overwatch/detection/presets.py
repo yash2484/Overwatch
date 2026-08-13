@@ -17,16 +17,36 @@ MapName = Literal[
     "ssim_dissim",
     "ndvi_before",
     "ndwi_before",
+    "ndvi_after",
     "ndwi_after",
 ]
+
+# "increase"/"decrease" read the threshold as a MAGNITUDE about zero (`>= t` / `<= -t`), which
+# suits deltas. An absolute map often needs a bound whose sign does not match its direction —
+# "NDVI at most +0.10" is unsayable as a decrease — so "at_most"/"at_least" take the threshold
+# as the bound itself.
+Direction = Literal["decrease", "increase", "at_most", "at_least"]
 
 
 class ThresholdRule(BaseModel):
     """One gate on a change map; a preset's rules are AND-ed (conservative by construction)."""
 
     map: MapName
-    direction: Literal["decrease", "increase"]
-    threshold: float = Field(gt=0)
+    direction: Direction
+    threshold: float
+
+    @model_validator(mode="after")
+    def _magnitude_must_be_positive(self) -> "ThresholdRule":
+        # For increase/decrease the threshold is a magnitude about zero, so a non-positive one
+        # is meaningless (and `decrease` with 0.0 would gate on `<= -0.0`, i.e. everything).
+        # at_most/at_least take the threshold as the bound itself, where 0 and negatives are
+        # ordinary values — "NDVI at most 0.0" is exactly the water test.
+        if self.direction in ("increase", "decrease") and self.threshold <= 0:
+            raise ValueError(
+                f"{self.direction!r} reads the threshold as a magnitude, so it must be > 0; "
+                f"got {self.threshold}. Use at_most/at_least for an absolute bound."
+            )
+        return self
 
 
 class DetectionPreset(BaseModel):
@@ -120,18 +140,30 @@ VERTICAL_PRESETS: dict[str, DetectionPreset] = {
         # -0.05 rather than 0.0 because the land/water NDWI boundary here is sharp (median
         # ndwi_before inside true flood area is -0.73), so the small negative margin costs
         # ~19 ha of marginal wet-soil pixels and buys a clean separation.
-        # The was-not-water gate is blind to the mirror-image failure: land that merely gets
-        # DARKER. Shading a canopy (terrain shadow, a low-sun after-scene) suppresses NIR harder
-        # than green, so NDWI climbs ~0.37 — past the 0.20 delta gate — from -0.71 to -0.33,
-        # which is still nowhere near water. Both rules above pass it and a green hillside gets
-        # outlined as flood. Flooding means land that IS water now, so the missing gate is an
-        # absolute floor on the after image rather than a third delta. Together the two absolute
-        # rules read as one clean crossing of McFeeters' 0.0 water boundary: land side before
-        # (<= -0.05), water side after (>= +0.05), with a symmetric margin either side.
+        # KNOWN LIMITATION, deliberately left open: shaded/darkening land can still pass. NDWI
+        # rises when a canopy is shaded (NIR falls harder than green), so a green hillside can
+        # clear both rules below and be outlined as flood.
+        #
+        # An absolute after-image gate was shipped for it on 2026-08-13 and WITHDRAWN the same
+        # day, because it cost more truth than it bought. Porto Alegre's floodwater is heavily
+        # sediment-laden, and suspended solids raise NIR, which drags NDWI down — so
+        # `ndwi_after >= 0.05` rejected the brown turbid water that IS the flood, keeping only
+        # 925.8 ha of the 1,932.7 ha the two rules below find. `ndvi_after` was measured as the
+        # replacement (it is far more shade-invariant) and its curve has no knee either:
+        # <= 0.00 keeps 57.6%, <= 0.10 keeps 64.3%, <= 0.30 keeps 76.4%, <= 0.50 keeps 92.2%,
+        # by which point it no longer gates anything. No absolute threshold on these four bands
+        # separates turbid floodwater from wet vegetation, because the scene holds a genuine
+        # continuum: open brown water, shallow water over grass, partly submerged canopy.
+        #
+        # The right instrument is SWIR, which is not fetched today (`_KEEP_ASSETS` is
+        # red/green/blue/nir/scl). Water absorbs SWIR almost totally whatever its sediment load,
+        # while shaded and wet vegetation does not, so MNDWI = (green - swir16)/(green + swir16)
+        # or AWEI_sh (which carries an explicit shadow term) makes the cut that NDWI and NDVI
+        # cannot. That needs two more assets and a re-fetch, so it is a scoped follow-up rather
+        # than a tuning change. Until then, recall is preferred over precision here on purpose.
         rules=[
             ThresholdRule(map="ndwi", direction="increase", threshold=0.20),
             ThresholdRule(map="ndwi_before", direction="decrease", threshold=0.05),
-            ThresholdRule(map="ndwi_after", direction="increase", threshold=0.05),
         ],
         primary_map="ndwi",
         min_area_m2=10_000.0,

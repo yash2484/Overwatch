@@ -54,16 +54,24 @@ def test_flood_preset_has_was_not_water_precondition() -> None:
     assert any(r.map == "ndwi" and r.direction == "increase" for r in flood.rules)
 
 
-def test_flood_preset_requires_water_in_the_after_image() -> None:
-    # The was-not-water precondition is blind to land that merely darkens: shading raises NDWI
-    # by more than the delta gate without the pixel ever becoming water. The absolute floor on
-    # the after image closes that, and pairs with the before rule as a clean crossing of
-    # McFeeters' 0.0 water boundary: land side before, water side after.
-    flood = VERTICAL_PRESETS["flood"]
-    floor = [r for r in flood.rules if r.map == "ndwi_after"]
-    assert len(floor) == 1
-    assert floor[0].direction == "increase"
-    assert floor[0].threshold > 0.0
+def test_flood_preset_has_no_absolute_after_gate() -> None:
+    # Guards the WITHDRAWAL, not an absence by accident. An absolute after-image gate shipped
+    # and was pulled the same day: sediment raises NIR, which drags NDWI down, so
+    # `ndwi_after >= 0.05` rejected the turbid water that IS the flood (1,932.7 -> 925.8 ha on
+    # the real pair). ndvi_after had no separating threshold either — its curve runs smoothly
+    # from 57.6% of baseline at <= 0.00 to 92.2% at <= 0.50, where it stops gating at all.
+    # Re-adding an absolute gate on these four bands means re-breaking recall; the fix needs
+    # SWIR. See the flood preset's comment.
+    assert not [r for r in VERTICAL_PRESETS["flood"].rules if r.map.endswith("_after")]
+
+
+def test_absolute_bound_directions_take_the_threshold_as_the_bound() -> None:
+    # "increase"/"decrease" read the threshold as a magnitude about zero, which cannot express a
+    # bound whose sign disagrees with its direction ("NDVI at most +0.10"). at_most/at_least
+    # take it literally, so 0.0 and negatives are ordinary values there.
+    assert ThresholdRule(map="ndvi_after", direction="at_most", threshold=0.0).threshold == 0.0
+    assert ThresholdRule(map="ndvi_after", direction="at_most", threshold=-0.2).threshold == -0.2
+    assert ThresholdRule(map="ndvi_before", direction="at_least", threshold=0.5).threshold == 0.5
 
 
 def test_port_preset_has_a_coastal_prior() -> None:
