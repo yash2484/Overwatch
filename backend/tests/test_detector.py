@@ -13,6 +13,7 @@ from tests.synthetic import (
     CROP,
     FOREST,
     SCL_CLOUD_HIGH,
+    SHADED_FOREST,
     TURBID_WATER,
     WATER,
     flat_window,
@@ -23,6 +24,9 @@ from tests.synthetic import (
 RECT = (40, 50, 30, 50)  # 10 x 20 px = 200 px = 20,000 m² — clears every min-area floor
 DETECTOR = ClassicalChangeDetector()
 
+COAST_SHAPE = (120, 400)  # 4 km wide: room for a build beside the sea AND one far inland
+SEA = (0, 120, 0, 20)  # 200 m of open water down the left edge
+
 
 def _pair(
     background: dict[str, int], change: dict[str, int], **inject_kwargs
@@ -30,6 +34,20 @@ def _pair(
     before = flat_window(background, seed=1)
     after = flat_window(background, seed=2)
     inject_rect(after, change, RECT, **inject_kwargs)
+    return before, after
+
+
+def _coastal_pair(change_rect: tuple[int, int, int, int]) -> tuple[AOIWindow, AOIWindow]:
+    """Forested coastline with open water on the left; BUILT injected at `change_rect` after.
+
+    The sea is injected with one seed into both dates, so it is byte-identical across the pair
+    and contributes no SSIM dissimilarity of its own.
+    """
+    before = flat_window(FOREST, shape=COAST_SHAPE, seed=1)
+    after = flat_window(FOREST, shape=COAST_SHAPE, seed=2)
+    for window in (before, after):
+        inject_rect(window, WATER, SEA, seed=3)
+    inject_rect(after, BUILT, change_rect)
     return before, after
 
 
@@ -72,6 +90,17 @@ def test_flood_ignores_water_that_merely_clears() -> None:
     assert DETECTOR.detect(before, after, VERTICAL_PRESETS["flood"]) == []
 
 
+def test_flood_ignores_darkening_that_never_becomes_water() -> None:
+    # The was-NOT-water precondition catches water->clearer-water but is blind to the opposite
+    # failure: land that gets DARKER. Shading a canopy suppresses NIR harder than green, so NDWI
+    # climbs ~0.37 (clearing the 0.20 delta gate) from a before value of -0.71 (clearing the
+    # was-not-water gate) to an after value of -0.33 — still nowhere near water. Both existing
+    # rules pass it. Flooding means land that IS water now, so the missing gate is an absolute
+    # floor on the after-image NDWI, not another delta.
+    before, after = _pair(FOREST, SHADED_FOREST)
+    assert DETECTOR.detect(before, after, VERTICAL_PRESETS["flood"]) == []
+
+
 def test_port_reclamation_detected() -> None:
     # The port preset is SSIM-only, so it catches construction over ANY prior cover. Sea ->
     # concrete (reclamation) is the headline transition.
@@ -81,15 +110,28 @@ def test_port_reclamation_detected() -> None:
     assert _covers(det.geometry, rect_geometry(RECT)) > 0.9
 
 
-def test_port_landward_construction_also_detected() -> None:
+def test_port_landward_construction_near_the_water_also_detected() -> None:
     # Regression guard for the fix: the OLD index-gated rule vetoed non-water builds and left
     # the terminal body half-outlined. SSIM is agnostic to prior cover, so vegetation -> built
     # is caught too — the whole terminal, not just its water-facing edge. (Bare -> built also
     # is on real imagery, via texture change the flat synthetic fixtures don't model.)
-    before, after = _pair(FOREST, BUILT)
+    # This build sits 200-400 m from the waterline, so the coastal prior keeps it.
+    rect = (40, 60, 40, 60)
+    before, after = _coastal_pair(rect)
     [det] = DETECTOR.detect(before, after, VERTICAL_PRESETS["port"])
     assert det.change_type is ChangeType.CONSTRUCTION
-    assert _covers(det.geometry, rect_geometry(RECT)) > 0.9
+    assert _covers(det.geometry, rect_geometry(rect)) > 0.9
+
+
+def test_port_ignores_construction_far_inland() -> None:
+    # Vizhinjam kept flagging scattered inland buildings well away from the harbour. Those ARE
+    # structural change — on the real pair they scored ssim_dissim ~0.87, as high as the
+    # terminal itself — so no SSIM threshold separates them: raising it drops the terminal too.
+    # What disqualifies them is location. Port works are on the sea, so the gate is geometric,
+    # applied alongside the spectral rule rather than instead of it.
+    rect = (40, 60, 350, 370)  # 3.3 km inland: outside the preset's buffer
+    before, after = _coastal_pair(rect)
+    assert DETECTOR.detect(before, after, VERTICAL_PRESETS["port"]) == []
 
 
 def test_no_change_yields_no_detections() -> None:

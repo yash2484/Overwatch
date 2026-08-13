@@ -54,6 +54,32 @@ def test_flood_preset_has_was_not_water_precondition() -> None:
     assert any(r.map == "ndwi" and r.direction == "increase" for r in flood.rules)
 
 
+def test_flood_preset_requires_water_in_the_after_image() -> None:
+    # The was-not-water precondition is blind to land that merely darkens: shading raises NDWI
+    # by more than the delta gate without the pixel ever becoming water. The absolute floor on
+    # the after image closes that, and pairs with the before rule as a clean crossing of
+    # McFeeters' 0.0 water boundary: land side before, water side after.
+    flood = VERTICAL_PRESETS["flood"]
+    floor = [r for r in flood.rules if r.map == "ndwi_after"]
+    assert len(floor) == 1
+    assert floor[0].direction == "increase"
+    assert floor[0].threshold > 0.0
+
+
+def test_port_preset_has_a_coastal_prior() -> None:
+    # Inland construction is real change that no spectral threshold can disqualify; only its
+    # location can. Port works are coastal, so the preset carries a distance-to-water bound.
+    assert VERTICAL_PRESETS["port"].near_water_m is not None
+    assert VERTICAL_PRESETS["port"].near_water_m > 0.0
+
+
+def test_verticals_without_a_spatial_prior_leave_it_unset() -> None:
+    # Deforestation and flooding are not constrained to coastlines; the prior must be opt-in
+    # per preset rather than a global filter.
+    assert VERTICAL_PRESETS["forest"].near_water_m is None
+    assert VERTICAL_PRESETS["flood"].near_water_m is None
+
+
 def test_forest_preset_has_was_forest_precondition() -> None:
     # NDVI decrease alone conflates deforestation with crop harvest; the precondition
     # requires the *before* image to have been forest-level green.

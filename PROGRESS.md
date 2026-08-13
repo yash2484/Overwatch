@@ -58,6 +58,47 @@ A follow-on pass after the phase gate, triggered by the "dark after-image" demo 
   polygons (8.4 ha total, none over 1.05 ha, 1.5–3.9 km north) that are real 4-year change but not port work.
   0.60 would cut those to 6 (4.3 ha) but shrink the terminal body to ~30.3 ha. Rejected.
 
+### Absolute gates + the first spatial prior (2026-08-13, same branch)
+
+Triggered by two user-reported false positives on the live console. Both were fixed with **free**
+signal (no new bands, no re-fetch, no LLM). Verified in-container: **334 passed**, ruff check +
+format clean (130 files), plus a read-only A/B against the real scene pairs — the DB was *not*
+re-run, because `evidence_links.detection_id` is `ondelete=CASCADE` and a replace-set would strip
+the evidence off the three paid `claude-opus-4-8` briefs.
+
+| AOI | vertical | previous | now | change |
+|---|---|---|---|---|
+| porto-alegre | flood | 66 det / 1,932.7 ha | 68 det / **925.8 ha** | −1,006.9 ha (48% kept) |
+| vizhinjam | port | 22 det / 83.3 ha | 14 det / **77.8 ha** | −5.5 ha (93% kept) |
+| novo-progresso | forest | 88 det / 163.7 ha | 88 det / 163.7 ha | unchanged (no gate added) |
+
+- **Flood: an absolute floor on the AFTER image (`ndwi_after >= 0.05`).** The was-NOT-water
+  precondition shipped on 2026-08-03 catches water→clearer-water but is blind to its mirror image:
+  land that merely gets **darker**. Shading a canopy suppresses NIR harder than green, so NDWI
+  climbs ~0.37 (past the 0.20 delta gate) from −0.71 to −0.33 — clearing the was-not-water gate
+  *because shaded forest was never water* — and a green hillside gets outlined as flood. **Half the
+  detected area was this**: 1,006.9 ha of 1,932.7 ha. Detection *count* rises 66→68 because clipping
+  splits large polygons; area is the meaningful metric. Threshold sweep (0.02/0.05/0.10/0.15/0.20/
+  0.30 → 962.8/925.8/834.8/758.8/673.5/497.4 ha) shows no knee, so 0.05 is chosen on principle, not
+  on the curve: it pairs with the −0.05 before-gate as one symmetric crossing of McFeeters' 0.0
+  water boundary. Costs only 37 ha versus 0.02; going to 0.20 would risk genuinely turbid floodwater.
+- **Port: the first *spatial* prior (`near_water_m=1000`, `near_water_min_body_m2=100_000`).** Inland
+  buildings scored `ssim_dissim` ~0.87, **as high as the terminal itself** — they are real
+  construction, so no threshold separates them (raising it drops the terminal too). Only location
+  disqualifies them. Strays >1 km from the terminal fall **13 → 6** while the near-terminal cluster
+  survives intact (34.9 → 34.3 ha, 98%). **The size floor carries as much weight as the distance**:
+  the before-image water mask holds the 1,538 ha sea *plus 16 specks of ≤0.1 ha*, each seeding its
+  own buffer — without the floor the same 1 km buffer keeps 20 of 22 and gates almost nothing.
+  2 km gates nothing at all (the AOI is only 4.5 × 5.5 km, so the whole window is within 2 km of sea).
+- **Honest limit:** the gate halves the strays, it does not clear them. The remaining 6 are *also*
+  coastal, just further along the same shore. Distance-to-water cannot see "is this port-related?" —
+  that residue is semantic, and it is the one place in this pipeline where an LLM would genuinely
+  earn its cost.
+- **New module** `detection/priors.py` (`near_water_mask`) — pure numpy, fails **closed**: a window
+  with no qualifying water returns an all-False mask, so a wrong bbox or clouded coast surfaces as
+  zero detections instead of a silently disabled prior. `MapName` gained `ndwi_after`; the detector
+  gained an `_after` branch symmetric with `_before`.
+
 *Next:* Phase 6 is demo-ready. Remaining is integration, not build: **push `phase-6-frontend-arena` + open a compare URL for the user to merge** (direct push to main is denied by policy; user merges). Optional follow-ups if desired: split the 2 MB JS bundle (`manualChunks` for maplibre/deck), swap demo briefs for live LLM briefs once the Anthropic key funds. (~~tune the flood preset so porto-alegre lights up~~ — done 2026-08-03; it needed a job run, not tuning.)
 
 ---

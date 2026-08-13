@@ -16,6 +16,12 @@ WATER = {"red": 300, "green": 500, "blue": 600, "nir": 150}  # NDWI ~+0.54: clea
 # (~+0.14). Turbid -> clear is a water-to-water transition that still clears an NDWI-increase
 # threshold, which is how flood detection acquires false positives over pre-existing water.
 TURBID_WATER = {"red": 700, "green": 800, "blue": 800, "nir": 600}
+# Canopy in deep shade (terrain shadow, or a low-sun after-scene). Every band darkens but NIR
+# darkens hardest, so NDWI *rises* ~0.37 while the pixel stays firmly on the land side of
+# McFeeters' 0.0 boundary (-0.33). This is the flood rule's other false positive: the delta gate
+# passes AND the was-not-water precondition passes, because shaded forest was never water. Only
+# an absolute floor on the after-image NDWI rejects it.
+SHADED_FOREST = {"red": 250, "green": 450, "blue": 200, "nir": 900}
 BUILT = {"red": 2600, "green": 2400, "blue": 2200, "nir": 2300}
 CROP = {"red": 1500, "green": 1600, "blue": 1000, "nir": 3500}  # NDVI ~0.40: green but not forest
 
