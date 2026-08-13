@@ -25,6 +25,12 @@ services:
       timeout: 3s
       retries: 10
 
+  # Settings(env_file=".env") resolves .env relative to the CWD *inside* the container
+  # (/app), and the repo-root .env is not mounted there — so secrets must be passed in as
+  # real environment variables. Compose interpolates ${...} from the gitignored ./.env at
+  # the repo root, which keeps the key out of this file and out of git. Unset -> empty ->
+  # Settings.anthropic_api_key is falsy -> POST /briefs answers 422 briefs_unconfigured,
+  # which is the intended behavior for a server with no key, not a crash.
   api:
     build: ./backend
     # --reload: src/ is bind-mounted, so API code changes apply without a restart.
@@ -33,6 +39,8 @@ services:
     environment:
       OVERWATCH_DATABASE_URL: postgresql://overwatch:overwatch_dev@postgis:5432/overwatch
       OVERWATCH_REDIS_URL: redis://redis:6379/0
+      OVERWATCH_ANTHROPIC_API_KEY: "${OVERWATCH_ANTHROPIC_API_KEY:-}"
+      OVERWATCH_FUSION_ENABLED: "${OVERWATCH_FUSION_ENABLED:-true}"
     ports:
       - "8000:8000"
     volumes:
@@ -46,12 +54,18 @@ services:
       redis:
         condition: service_healthy
 
+  # The worker is where the real Anthropic call actually happens (AnthropicBriefGenerator),
+  # so it needs the key as much as the API does. Both flags are set identically on all three
+  # backend services on purpose: a split config — fusion on in the API, off in beat — is a
+  # confusing bug waiting to happen, and worth more than the marginal least-privilege win.
   worker:
     build: ./backend
     command: celery -A overwatch.workers.celery_app worker --loglevel=info
     environment:
       OVERWATCH_DATABASE_URL: postgresql://overwatch:overwatch_dev@postgis:5432/overwatch
       OVERWATCH_REDIS_URL: redis://redis:6379/0
+      OVERWATCH_ANTHROPIC_API_KEY: "${OVERWATCH_ANTHROPIC_API_KEY:-}"
+      OVERWATCH_FUSION_ENABLED: "${OVERWATCH_FUSION_ENABLED:-true}"
     volumes:
       - ./backend/src:/app/src
       - ./data:/app/data
@@ -67,6 +81,8 @@ services:
     environment:
       OVERWATCH_DATABASE_URL: postgresql://overwatch:overwatch_dev@postgis:5432/overwatch
       OVERWATCH_REDIS_URL: redis://redis:6379/0
+      OVERWATCH_ANTHROPIC_API_KEY: "${OVERWATCH_ANTHROPIC_API_KEY:-}"
+      OVERWATCH_FUSION_ENABLED: "${OVERWATCH_FUSION_ENABLED:-true}"
     volumes:
       - ./backend/src:/app/src
     depends_on:

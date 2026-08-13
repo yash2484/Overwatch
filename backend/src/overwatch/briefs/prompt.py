@@ -1,4 +1,4 @@
-"""Prompt builder for LLM-generated intelligence briefs (Phase 4, Task 6).
+"""Prompt builder for LLM-generated intelligence briefs (Phase 4, Task 6; Phase 5, Task 9).
 
 Pure string building: no LLM calls, no network, no DB. Renders a `BriefRequest`
 (AOI, before/after scene pair, aggregate stats, detection rows) into the Anthropic
@@ -8,11 +8,18 @@ aggregate-stats block always reports totals over the FULL detection set so the
 model (and a human reader) never sees an undercount. On retry, each prior
 `AttemptFailure` is replayed as an assistant turn (the rejected draft's JSON)
 followed by a user turn listing the violations to fix.
+
+Phase 5 adds the SOURCES block — news articles that survived the three gates, rendered
+with the ids the model must cite them by, and capped at `settings.fusion_max_prompt_articles`.
+It carries the rules of the observed/reported wall (design §6), which the validator's
+Gate 4 then enforces: a claim backed only by journalism is REPORTED SPEECH, framed as
+such, carrying no figures. The prompt must state every rule the validator checks — the
+alternative is a model steered into a rejection it was never told how to avoid.
 """
 
 import logging
 
-from overwatch.briefs.models import AttemptFailure, BriefRequest, DetectionRow
+from overwatch.briefs.models import ArticleRow, AttemptFailure, BriefRequest, DetectionRow
 from overwatch.config import settings
 
 logger = logging.getLogger("overwatch.briefs.prompt")
@@ -27,7 +34,12 @@ evidence list, and any quantity you state must come from those detections' recor
 values (areas in m²; dates are the two capture dates provided).
 - Claims of type "context" give background only and must contain no numbers, \
 percentages, areas, or dates.
-- Use only claim types "observed" and "context".
+- The four claim types are "observed", "context", "reported", and "mixed". The last two \
+cite news articles, so they are available ONLY when a SOURCES section appears in the \
+message below; with no SOURCES section, use "observed" or "context".
+- Journalism is not sensing. A claim backed only by news articles is reported speech: it \
+never claims to have been seen, and it never carries a measured figure. Only detections \
+carry figures.
 - Never invent detections, quantities, or dates. If the data does not support a \
 statement, do not make it.
 - Write 3-8 claims, ordered for reading: headline finding first, context last."""
@@ -69,11 +81,60 @@ def _select_for_prompt(detections: list[DetectionRow]) -> list[DetectionRow]:
     return ranked
 
 
+def _select_articles_for_prompt(articles: list[ArticleRow]) -> list[ArticleRow]:
+    """Return articles capped at the configured prompt limit.
+
+    Unlike detections — ranked largest-area-first before the cap bites — articles arrive
+    from `articles_for_pair` in chronological order and `news_articles` stores no score,
+    so there is nothing to rank on. The cap therefore keeps the EARLIEST N: for a
+    deforestation story the coverage clusters at the clearing, which is the start of the
+    interval, not the end. Truncation is logged at WARNING for the same reason the
+    detection cap is — evidence is being dropped from the model's view.
+    """
+    cap = settings.fusion_max_prompt_articles
+    if len(articles) > cap:
+        logger.warning(
+            "Truncating articles for prompt: %d total, serializing earliest %d (cap=%d)",
+            len(articles),
+            cap,
+            cap,
+        )
+        return articles[:cap]
+    return articles
+
+
+def _article_line(row: ArticleRow) -> str:
+    return f"  [{row.id}] {row.seendate.isoformat()} {row.domain}: {row.title}"
+
+
+def _sources_block(articles: list[ArticleRow]) -> str:
+    serialized = _select_articles_for_prompt(articles)
+    article_lines = "\n".join(_article_line(a) for a in serialized)
+    return (
+        "\n"
+        "\n"
+        "SOURCES (news articles — REPORTED, not observed):\n"
+        f"{article_lines}\n"
+        "\n"
+        "RULES FOR SOURCES:\n"
+        '  - A claim supported ONLY by articles MUST use claim_type "reported", MUST cite '
+        "the article ids that support it in `article_evidence` (never in `evidence`), and "
+        'MUST be phrased as reported speech (e.g. "Regional news reports that...").\n'
+        '  - Such a claim may NEVER use observational framing ("imagery confirms...", '
+        '"detected", "is visible") and may NEVER carry a quantity — no areas, no '
+        "percentages, no dates. An article is not a measurement.\n"
+        '  - Use "mixed" only for a claim that cites BOTH a detection id and an article id. '
+        "A quantity in a mixed claim is licensed by the detection it cites, never by the "
+        "article.\n"
+        '  - An "observed" claim may not cite article ids at all.'
+    )
+
+
 def _user_message_body(request: BriefRequest) -> str:
     stats = _stats_block(request.detections)
     serialized = _select_for_prompt(request.detections)
     detection_lines = "\n".join(_detection_line(d) for d in serialized)
-    return (
+    body = (
         f"AREA OF INTEREST: {request.aoi_name} "
         f"(slug: {request.aoi_slug}, vertical: {request.vertical})\n"
         "\n"
@@ -86,6 +147,11 @@ def _user_message_body(request: BriefRequest) -> str:
         "DETECTIONS (largest first):\n"
         f"{detection_lines}"
     )
+    # No articles => no SOURCES section and no source rules. Rules about citing ids that
+    # do not exist are an invitation to invent them.
+    if request.articles:
+        body += _sources_block(request.articles)
+    return body
 
 
 def _feedback_message(failure: AttemptFailure) -> str:

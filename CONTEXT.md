@@ -11,6 +11,14 @@ Earth Search STAC items carry a raw digital-number (DN) encoding for Bottom-of-A
 - Discovered in: `c836c8e fix(phase-2): harmonize Sentinel-2 BOA offset across processing baselines`.
 - Why it matters here specifically: mixing an old-baseline scene (offset 0) with a new-baseline scene (offset -1000) in the same before/after pair produces a spurious uniform brightness shift that differencing reads as change everywhere — a false-positive generator, not a localized bug.
 
+### The metadata lies for Sentinel-2C — trust the pixels
+
+`s2:processing_baseline` and `earthsearch:boa_offset_applied` are **not reliable on their own**. Vizhinjam's 2025 after-scene `S2C_43PGK_20250211` advertises baseline `05.11` with `boa_offset_applied=False`, so `boa_dn_offset` returns `-1000` — but the DNs are already offset-free (red p50 = 314, the same scale as the 2021 before-scene). Applying the correction clipped **~90% of the scene to zero**: a near-black after-image, SSIM saturated, NDWI pinned at -1 over water, detection destroyed.
+
+- Guard: `_offset_is_present()` in `backend/src/overwatch/imagery/harmonize.py` checks the data before trusting the metadata — if removing the offset would clip **>50% of valid pixels to zero**, the DNs already lack it, so harmonization is skipped and a warning is logged.
+- **Expect this on any Sentinel-2C scene from Earth Search.** The guard self-corrects per scene, so the warning is informational, not a failure — but a new/recent AOI surfacing it is normal, not a regression.
+- General lesson: a metadata flag describing what was *done to* the pixels is a hint. Where the correction is destructive if wrong, verify against the pixels themselves.
+
 ## One acquisition, several STAC items (reprocessings)
 
 Earth Search can hold **more than one item for the same Sentinel-2 acquisition** — later reprocessings of identical pixels, distinguished by the numeric field in the id: `S2A_43PGK_20210212_0_L2A` vs `S2A_43PGK_20210212_2_L2A`.
@@ -24,9 +32,120 @@ Earth Search can hold **more than one item for the same Sentinel-2 acquisition**
 
 Raw NDVI-decrease is **not sufficient** to detect deforestation: crop harvest also drops NDVI by a similar magnitude, and a naive threshold conflates the two.
 
-- Fix: `_change_maps` in `backend/src/overwatch/detection/detector.py` now also computes absolute `<index>_before` maps (not just before/after deltas). The forest preset (`backend/src/overwatch/detection/presets.py`) ANDs the NDVI-decrease trigger with `ndvi_before >= 0.60` — the "before" image must have actually been forest-level green, not already-cleared cropland.
+- Fix: `_change_maps` in `backend/src/overwatch/detection/detector.py` now also computes absolute `<index>_before` maps (not just before/after deltas). The forest preset (`backend/src/overwatch/detection/presets.py`) ANDs the NDVI-decrease trigger with an `ndvi_before` floor — the "before" image must have actually been forest-level green, not already-cleared cropland.
 - Discovered in: `2b6c1fb feat(detection): was-forest precondition for forest preset`, validated against the real Novo Progresso AOI pair: raw NDVI-decrease detections dropped from 103 → 63 polygons after the gate; the 40 removed were cropland already cleared before the observation window, not new deforestation.
-- General lesson for other presets (port, flood): a "was it plausibly in the pre-change state to begin with" precondition is likely needed wherever the same index-delta pattern can arise from two different real-world causes. Check before shipping a new preset threshold.
+- **Current thresholds are looser than the original gate**: NDVI-decrease `0.15`, `ndvi_before >= 0.50`, min_area `3_000` m² (was 0.20 / 0.60 / 5_000). The tighter set missed clearings visible by eye. `0.50` still sits well above cropland NDVI (~0.30–0.45), so the harvest-exclusion property survives. Novo Progresso: 24 → 88 detections, largest 11 → 18 ha.
+- The precondition is **not universal**, and the deciding question is whether the *pre-change state* is
+  single-valued. Deforestation always starts from forest and flooding always starts from not-water, so both
+  take a precondition (see the flood section below). Port construction starts from sea *or* bare fill *or*
+  vegetation, so a precondition there vetoes most of the target — see the port section below.
+
+## Port construction is structural, not spectral (SSIM-only preset)
+
+Port expansion is a **structural rebuild** of the harbour, and the pre-change surface differs by pixel: sea → built, bare fill → built, vegetation → built. Any spectral index co-signal captures one of those transitions and **vetoes the other two**.
+
+- Concretely at Vizhinjam: an NDWI-decrease co-signal fired only on the water-facing reclaimed *edge* and vetoed the bare-fill interior, which was already land by the 2021 before-scene. The terminal came back half-outlined.
+- Fix: the `port` preset is **SSIM-dissimilarity only**, threshold `0.55`, min_area `5_000` m². SSIM is agnostic to prior cover, so it fires wherever the surface was structurally rebuilt. False positives are controlled by the threshold and min_area, not by an index veto that misses most of the target.
+- Result: largest polygon 19.6 → 39.6 ha, total 31 → 83 ha, with 74.9 ha inside ~1 km of the terminal.
+- **The threshold is a completeness/precision dial, and 0.55 deliberately favours completeness.** It leaves ~14 stray coastal polygons (8.4 ha total, none over 1.05 ha, 1.5–3.9 km north) that are real 4-year change but not port construction. Tightening to `0.60` cuts the strays to 6 (4.3 ha) but shrinks the terminal body to ~30.3 ha. Confirmed visually and kept at 0.55 — the port reads cleanly, including port-adjacent buildings.
+
+## Flood needs a was-NOT-water precondition (NDWI-increase fires on water→water)
+
+NDWI-increase alone cannot separate **"land became water"** from **"water became more water-like."** Suspended
+sediment raises NIR, so turbid water reads at NDWI ~+0.14 while clear water reads ~+0.54 — a delta of +0.40 on
+pixels that were already water, double the 0.20 gate. Between two dates, sediment settling or a channel
+deepening therefore reads as new flooding.
+
+- Measured on the real Porto Alegre pair (2024-04-18 → 2024-05-21): **26% of detected area, 719.7 ha, sat on
+  already-water pixels**, including one **251 ha polygon that was 100% water in the before scene**. Genuine
+  flood polygons also swelled across the channels *between* islands, merging separate landmasses into one
+  blob — the visual tell that surfaced this.
+- Fix: `ThresholdRule(map="ndwi_before", direction="decrease", threshold=0.05)` — the pixel must have read
+  `ndwi_before <= -0.05` (non-water) before it can count as flooded. Result: contamination **26.0% → 0.07%**,
+  the 251 ha artefact gone, the largest polygon 672.3 → 474.9 ha at 0.00% already-water.
+- `-0.05` rather than `0.0` because `ThresholdRule.threshold` is constrained `gt=0`, and because the land/water
+  NDWI boundary here is sharp (median `ndwi_before` inside true flood area is **-0.73**). The margin costs
+  ~19 ha of marginal wet-soil pixels and buys clean separation; the sweep from 0.00 to 0.20 moves total area
+  only 2029 → 1956 ha, so the result is not threshold-sensitive.
+- Note the direction convention: `direction="decrease"` means `value <= -threshold`, so a "must be low"
+  precondition is expressed as a decrease rule (see `rule_mask`).
+
+## OSCD: read `cm.tif` and `imgs_*_rect`, never `cm.png` or `imgs_*`
+
+Two file-choice traps in the benchmark archives, both of which fail **silently** and produce a
+plausible-looking but meaningless number.
+
+- **Labels.** `<city>/cm/<city>-cm.tif` is authoritative and encodes **1 = unchanged, 2 = changed**.
+  The sibling `cm.png` is not interchangeable: abudhabi's is **RGBA with an all-255 alpha channel**,
+  so the natural "any non-zero is change" decoder marks **100% of the scene changed**; aguasclaras'
+  carries antialiasing artefacts spanning 150+ distinct values. `decode_cm()` therefore rejects any
+  value outside `{1, 2}` — the guard exists because the assumption was wrong on first contact with
+  the data, not in theory.
+- **Imagery.** Use `<city>/imgs_1_rect/` and `imgs_2_rect/` — the coregistered pair on one grid,
+  matching the label raster exactly. The plain `imgs_1/` / `imgs_2/` folders hold native per-band
+  resolutions (10/20/60 m) and are **not pixel-aligned between dates**, so differencing them is
+  meaningless. Band files in `_rect` are plain `B02.tif`…`B12.tif` plus `B8A.tif`.
+- Band mapping is written out explicitly (`BAND_FILE`) rather than derived from the plane index:
+  the "+1" rule that maps plane 1 → `B02` holds only to `B08`, because **B8A sits between B08 and
+  B09**. A derived rule would drift the moment anyone reads a SWIR band.
+
+## Score the polygons, not the threshold mask
+
+Accuracy is measured by rasterising the detections the detector *emits* and comparing those to the
+truth mask — not by scoring `rule_mask`'s output directly.
+
+- This is what makes the number mean *"what `GET /aois/{slug}/detections` returns"* rather than
+  *"what the thresholder saw"*. Morphology (open→close) and the `min_area_m2` floor both change the
+  answer, and both are part of the shipped behaviour, so both must be inside the measurement.
+- Consequence worth expecting: the min-area floor costs recall on benchmarks full of small changes.
+  That is a real property of the shipped system, not a measurement artefact to tune away.
+- `overwatch.eval` must never be imported by `overwatch.detection` — scoring code cannot be allowed
+  to influence what is detected.
+
+## Gate 3 sums the linked detections — one claim, one quantity
+
+The numeric validator compares a quoted area against the **sum of every detection linked to that
+claim**, not against any individual one. A claim that quotes two areas and links both detections
+therefore fails twice: each quote is measured against the combined total.
+
+- Observed live on the first real LLM brief: *"a single construction zone of about 396,500 m² and
+  an adjacent area of roughly 217,200 m²"* with both detections linked → two `area_mismatch`
+  violations, each citing `linked_area_m2=613700` (the sum). The regeneration loop split them into
+  one-detection-per-claim statements and validated on attempt 2.
+- The rule this enforces: **one claim, one quantity, one evidence set.** It is why the prompt must
+  push the model toward atomic claims — and it is a genuine accuracy property, not pedantry, since
+  a reader cannot tell which polygon a number refers to when several are cited together.
+- Practical consequence for prompt work: expect a first-attempt rejection rate on multi-figure
+  claims, and budget for `brief_max_attempts` accordingly (novo-progresso needed all 3).
+
+## Demo briefs and real briefs share a table — the seeder is destructive
+
+`seed_briefs` calls `_purge_briefs`, which deletes **every** brief for an AOI before writing its
+hand-authored one. Run it after a live `generate_brief` and the paid Anthropic output is gone with
+no warning.
+
+- Guard: `_has_real_brief()` treats any **validated** brief whose `model != "demo-seed"` as real
+  and skips that AOI; `--force` overrides. `DEMO_MODEL` is the single source of that literal.
+- The distinction is the `model` column, not the status — both kinds land as `validated`, because
+  the seeder calls `persist_validated` directly and bypasses the validator entirely.
+
+## "Zero detections" is ambiguous — check for a job row before touching thresholds
+
+An AOI serving **0 detections** has two completely different causes, and they look identical from the API:
+the detector ran and found nothing (a tuning problem), or **the detector never ran** (an orchestration gap).
+Scenes can exist without a job: ingestion during an AOI-viability check writes `scenes` rows directly, and
+nothing downstream requires a job to follow.
+
+- Porto-alegre sat at 0 detections for weeks, recorded in `PROGRESS.md` as "the flood engine found none
+  though the flood is visibly obvious — a detection-tuning matter," with an inherited hypothesis about
+  turbid-water NDWI false-negatives. Both were wrong: the AOI had **zero rows in `jobs`**. Running the
+  shipped preset on its existing pair, unchanged, produced **75 detections / 2,686.5 ha**.
+- **Check first:** `select count(*) from jobs where aoi_id = ...`. One query separates the two causes and
+  costs nothing. Tuning a preset against an AOI that never ran is unfalsifiable work.
+- Note that `rerun_detection.py` and `seed_briefs.py` both derive the scene pair from the AOI's *latest
+  detection*, so neither can bootstrap an AOI that has none — the first run must go through
+  `POST /aois/{slug}/jobs`. Tight date windows (±1 day around the known captures) reselect the existing
+  scene rows rather than creating new ones.
 
 ## Alembic fileConfig silently disables app loggers
 
@@ -68,3 +187,59 @@ The Phase-4 `AnthropicBriefGenerator` (`backend/src/overwatch/briefs/generator.p
 - **`anthropic.Anthropic(api_key=None)` does NOT raise** on this SDK version — credential validation is deferred to the first request, not the constructor (a "fact" I initially got wrong and the implementer corrected empirically). Consequence: constructing the client can't be your missing-key guard. The real guard is at the **API layer** — `POST /aois/{slug}/briefs` returns `422 briefs_unconfigured` when `settings.anthropic_api_key` is falsy, before any brief row is created. The generator itself maps `AuthenticationError` → `PermanentBriefError("anthropic_auth")` as a backstop. When adding new entry points that call the generator, replicate the settings-level key check; do not rely on client construction to fail.
 
 Standing rule: all 187+ tests run with `FakeBriefGenerator` / mocks, so **CI never needs the Anthropic key**. The key enters `.env` only for the live verification gate (user-supplied, never committed).
+
+## GDELT: no geotag exists, and the GKG geofence is a trap
+
+Measured against live queries during the Phase-5 spike (2026-07-12). **Do not rebuild the geofence.** Design-spec §3.2's
+"article geotag within the AOI buffered by 25 km" was written against a GDELT surface that does not exist.
+
+- **GEO 2.0 is down (documented-flaky), and would not help even if up.** `api.gdeltproject.org/api/v2/geo/geo` → **HTTP
+  404** on every form, 5/5 retries: bare query, `mode=PointData&format=GeoJSON`, `format=csv`, and the exact
+  `theme:env_nuclearpower&mode=country&format=html` URL from GDELT's own docs. (`doc/doc` and `tv/tv` resolve fine;
+  `/api/v2/geo` 301s to `/api/v2/geo/` which 403s.) GDELT's client-library docs call the GEO endpoint *"occasionally
+  unavailable (HTTP 404) independent of the DOC API"* — so it is flaky, not provably retired. **Do not chase it:**
+  GDELT states GGG is *"the underlying dataset powering the GEO 2.0 API"*, so GEO 2.0 / `format=geojson` / `format=csv` /
+  BigQuery `gdelt-bq.gdeltv2.ggg` / raw GKG `V2Locations` are all **the same geocoder through different pipes**.
+  Changing transport does not change the payload. DOC 2.0 is the only usable surface.
+- **DOC 2.0 returns no coordinates.** A record carries exactly `url, url_mobile, title, seendate, socialimage, domain,
+  language, sourcecountry`. There is no location operator either: `locationcc:BR` comes back as *"keywords were too
+  short, too long or too common"* — it was parsed as a literal keyword.
+- **`sourcecountry` is the publisher's registration country, not the story's location.** Mongabay's article about
+  deforestation in Pará, Brazil returns `sourcecountry: Indonesia`. Never use it as a geographic proxy.
+- **GDELT's DOC 2.0 *debut* documentation page is STALE about the date range — do not trust it.** It states
+  `STARTDATETIME`/`ENDDATETIME` **"must be within the last 3 months"**, and search engines happily quote that back at
+  you. It is obsolete: the ["1.5 Year Searching"](https://blog.gdeltproject.org/doc-2-0-updates-1-5-year-searching-and-updated-mobile-interface/)
+  post says the rolling cutoff was *"permanently replaced"* with a fixed **Jan 1 2017** start date. Settled empirically
+  in-repo: `backend/tests/fixtures/gdelt/vizhinjam_2024.json` is a verbatim DOC `artlist` capture of **June–July 2024**
+  articles, retrieved on **2026-07-12** — i.e. **two years** after publication. **Historical windows work.** If a
+  historical query comes back empty, the date range is not your bug; look at the query's theme conjunction instead.
+  (Cost us most of a session on 2026-07-14 chasing a coverage limit that does not exist.)
+- **The GKG-bucket geofence works mechanically and fails on data quality.** DOC's `seendate` does map onto a GKG bucket
+  file (`20240512214500.gkg.csv.zip`, 3.4–8.9 MB), the article is findable in it, and `V2Locations` does carry lat/lon.
+  But for the three articles our demo depends on, GKG's geocoder returned: the **country centroid of India** (~1,000 km
+  from Vizhinjam); **Mato Grosso do Sul, Rio Grande do Sul, and Spain** for the Novo Progresso/Pará story (~330 km, and
+  Pará never appears); and for a third, the seendate bucket contained an **Ethiopia militia story** instead of the
+  article. **A 25 km geofence rejects 100% of our true positives.** V2Locations resolves to country/ADM2 centroids driven
+  by incidental place mentions in body text, not the story's subject location.
+- **Titles routinely omit the place name.** DOC exposes only the title; its `query` matches full text. Zero of six Porto
+  Alegre articles say "Porto Alegre" in the title; zero of four Novo Progresso articles say "Novo Progresso" — they all
+  say "Amazon". A title-only toponym gate scores 0/6 and 0/4 on our own demo corpus. Hence Phase 5's two-layer design:
+  the **strict** term is enforced by GDELT against full text at retrieval; the pure scorer corroborates against a
+  **generous** term list (including regional names) that actually appears in titles.
+- **Rate limiting:** HTTP **429** with a **plaintext** body (not JSON) — never `json.loads` a GDELT response without
+  checking. A `200` can also carry a plaintext error. ≥5 s between requests; after a burst it took ~75 s to clear.
+
+**Root cause, in GDELT's own words — this is why no access method rescues the geofence.** From the GGG announcement:
+*"all locations are drawn from a set of **centroid-based gazeteers** in which every reference to Paris, France will
+always yield precisely the same coordinate."* **News geocoding resolves a place mention to that place's centroid; our
+AOIs are sub-place polygons.** Novo Progresso is a ~38,000 km² municipality — its centroid can sit >100 km from our
+~60 km² AOI. A 25 km geofence is not a strict gate that happens to be broken; it is geometrically meaningless at our
+resolution. BigQuery/GGG was evaluated and rejected on these grounds (plus a GCP dependency for a demo that otherwise
+needs no cloud account).
+
+**Worth revisiting in v0.2:** GGG rows are per *location-mention* and carry `ContextualText` (600-char snippet) and
+`GeoType` (precision code; `>1` excludes country centroids). That context field is a much better substrate for the
+**toponym and thematic** gates than a title — it fixes "titles omit the place name" — but it does **not** rescue a
+*spatial* gate. The decisive BigQuery sandbox query that would overturn the decision is in the design doc §2.4b.
+
+Full evidence and the resulting gate design: `design-specs/2026-07-12-phase-5-osint-fusion-design.md` §2.

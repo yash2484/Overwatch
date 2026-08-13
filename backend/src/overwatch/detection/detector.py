@@ -13,6 +13,7 @@ from overwatch.detection.models import Detection
 from overwatch.detection.polygonize import polygonize_mask
 from overwatch.detection.postprocess import clean_mask, rule_mask
 from overwatch.detection.presets import DetectionPreset
+from overwatch.detection.priors import keep_near_largest
 from overwatch.imagery.masking import apply_mask, usable_mask
 from overwatch.imagery.models import AOIWindow
 
@@ -41,7 +42,12 @@ class ClassicalChangeDetector:
             open_px=preset.morph_open_px,
             close_px=preset.morph_close_px,
         )
-        return polygonize_mask(mask, maps, preset, before.transform, before.epsg)
+        detections = polygonize_mask(mask, maps, preset, before.transform, before.epsg)
+        if preset.focus_radius_m is not None:
+            # Applied after polygonization, not as a mask gate: the anchor is the largest
+            # detection, which does not exist until the regions have been labelled and measured.
+            detections = keep_near_largest(detections, radius_m=preset.focus_radius_m)
+        return detections
 
 
 def _check_coregistered(before: AOIWindow, after: AOIWindow) -> None:
@@ -53,17 +59,23 @@ def _check_coregistered(before: AOIWindow, after: AOIWindow) -> None:
         raise ValueError("window transforms differ — windows are not co-registered")
 
 
+def _masked_bands(window: AOIWindow, usable: np.ndarray) -> dict[str, np.ndarray]:
+    """The window's bands with unusable (cloud, shadow, no-data) pixels set to NaN."""
+    return {name: apply_mask(band, usable) for name, band in window.bands.items()}
+
+
 def _change_maps(
     before: AOIWindow, after: AOIWindow, preset: DetectionPreset, usable: np.ndarray
 ) -> dict[str, np.ndarray]:
-    """A map per rule name. Delta and absolute-before index maps see NaN-masked bands; SSIM raw.
+    """A map per rule name. Delta and absolute index maps see NaN-masked bands; SSIM raw.
 
-    `"<index>"` -> after-minus-before delta; `"<index>_before"` -> the absolute index in the
-    before image (a precondition on prior land cover, e.g. "was this forest?").
+    `"<index>"` -> after-minus-before delta; `"<index>_before"` / `"<index>_after"` -> the
+    absolute index in that image, gating on prior land cover ("was this forest?") or on resulting
+    land cover ("is this water now?").
     """
     needed = {rule.map for rule in preset.rules}
-    masked_before = {k: apply_mask(v, usable) for k, v in before.bands.items()}
-    masked_after = {k: apply_mask(v, usable) for k, v in after.bands.items()}
+    masked_before = _masked_bands(before, usable)
+    masked_after = _masked_bands(after, usable)
     maps: dict[str, np.ndarray] = {}
     for name in needed:
         if name in _INDEX_FNS:
@@ -71,6 +83,8 @@ def _change_maps(
             maps[name] = index_delta(fn(masked_before), fn(masked_after))
         elif name.endswith("_before") and name.removesuffix("_before") in _INDEX_FNS:
             maps[name] = _INDEX_FNS[name.removesuffix("_before")](masked_before)
+        elif name.endswith("_after") and name.removesuffix("_after") in _INDEX_FNS:
+            maps[name] = _INDEX_FNS[name.removesuffix("_after")](masked_after)
         elif name == "ssim_dissim":
             maps[name] = ssim_dissimilarity(
                 before.bands[preset.ssim_band], after.bands[preset.ssim_band]

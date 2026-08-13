@@ -45,7 +45,13 @@ Docker Compose services: `api`, `worker`, `beat`, `postgis`, `redis`, `frontend`
 
 Pure function, no I/O — the project's second TDD target after the detection engine. A candidate article passes only if **all three** gates pass (AND, not a weighted score — conservative by construction):
 
-1. **Spatial:** article geotag (GDELT GKG geocoding) falls within the AOI geometry buffered by **25 km**.
+1. ~~**Spatial:** article geotag (GDELT GKG geocoding) falls within the AOI geometry buffered by **25 km**.~~
+   > 🚫 **SUPERSEDED 2026-07-12 — DO NOT BUILD THIS.** There is no article geotag: GDELT DOC 2.0 returns no coordinates
+   > and has no location operator, and GEO 2.0 404s on every form. The geocoder behind GKG/GEO/BigQuery-GGG is
+   > **centroid-based by GDELT's own documentation** (*"every reference to Paris, France will always yield precisely the
+   > same coordinate"*), so it resolves a place *mention* to that place's centroid — while our AOIs are sub-place
+   > polygons. Measured: a 25 km geofence **rejects 100% of our true positives**.
+   > **Replacement: a toponym gate.** See `design-specs/2026-07-12-phase-5-osint-fusion-design.md` §2 and §4.
 2. **Temporal:** article publication date within **[detection window start − 30 days, window end + 14 days]**.
 3. **Thematic:** article matches the AOI vertical's GDELT theme/keyword allowlist:
    - Port: construction / trade / shipping / infrastructure themes.
@@ -80,7 +86,7 @@ PostGIS tables (Pydantic v2 models mirror each; geometries as PostGIS types with
 | `aois` | User-defined areas of interest | geometry (polygon), name, vertical preset, cadence |
 | `scenes` | Sentinel-2 scene metadata per AOI window | STAC id (natural key), datetime, cloud %, usable-pixel fraction, band/window metadata |
 | `detections` | Change events | geometry (polygon), AOI FK, scene-pair FKs, change type, magnitude, confidence, contributing indices |
-| `news_articles` | GDELT articles that passed the scorer | url, title, source, published date, geotag (point), matched AOI FK, gate scores |
+| `news_articles` | GDELT articles that passed the scorer | url, title, domain, language, seendate, matched AOI FK, after_scene FK, `gates_passed`, `query` — **no geotag column** (superseded 2026-07-12: GDELT exposes no article coordinates; see §3.2) |
 | `briefs` | Generated intelligence briefs | AOI FK, window, status (draft/validated/rejected), retry count |
 | `brief_claims` | Individual claims in a brief | brief FK, sentence text, claim type (observed/reported/mixed) |
 | `evidence_links` | Claim → evidence, polymorphic | claim FK, evidence type (`detection` \| `article`), evidence FK |
@@ -111,7 +117,7 @@ All live in per-vertical preset configs, not hardcoded:
 - **AOI size cap:** **500 km²** (≈5 MP per band at 10 m — keeps windowed COG reads laptop-viable; reject larger AOIs at the API with a structured error).
 - **Minimum detection area:** port **1,500 m²** (SSIM + NDVI-loss primary); deforestation **5,000 m²** / 0.5 ha (NDVI delta primary); flood **10,000 m²** / 1 ha (NDWI delta primary).
 - **Morphology:** opening then closing before polygonization (kernel sizes in preset config).
-- **Fusion gates:** 25 km spatial buffer; −30 d/+14 d temporal window; per-vertical theme allowlist (§3.2).
+- **Fusion gates:** ~~25 km spatial buffer~~ **toponym match** (superseded 2026-07-12, §3.2); −30 d/+14 d temporal window **anchored on the after-scene** (the original spanned the whole before→after gap — ~3 years for Vizhinjam — making the gate vacuous); per-vertical theme allowlist.
 - **Brief validator:** max 3 regeneration attempts, then brief marked `rejected` and surfaced as such (never silently dropped).
 - **Job progress:** REST polling, 2 s interval. No WebSocket, no alerting in v0.1.
 

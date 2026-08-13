@@ -18,6 +18,14 @@ dist/
 Thumbs.db
 .serena/
 
+# Local Compose overrides (per-machine host-port remaps, etc.) — never project code.
+docker-compose.override.yml
+
+# Local machine config, not project code. `.wslconfig.proposed` is a parked, ready-to-copy
+# WSL2 memory cap (see the header inside it) — apply it after v1 by copying to
+# %USERPROFILE%\.wslconfig. Machine-specific, so it never belongs in the tree.
+.wslconfig*
+
 # Local data artifacts (rasters land here in Phase 1)
 data/
 *.tif
@@ -25,3 +33,8 @@ data/
 
 # graphify knowledge graph outputs
 graphify-out/
+
+# Session handover notes. Deliberately untracked: these exist so a fresh Claude Code session can
+# pick up mid-phase context, so they are working notes about the *state of a session*, not about
+# the project. Anything that outlives a session belongs in PROGRESS.md / CONTEXT.md instead.
+HANDOVER-*.md

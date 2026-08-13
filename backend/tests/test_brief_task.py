@@ -6,14 +6,20 @@ same rule applied to the job chain).
 """
 
 import itertools
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from shapely.geometry import box
 from sqlalchemy.orm import Session
 
-from overwatch.briefs.generator import FakeBriefGenerator, PermanentBriefError, TransientBriefError
-from overwatch.briefs.models import BriefDraft, ClaimDraft
+from overwatch.briefs.generator import (
+    FAKE_INPUT_TOKENS,
+    FAKE_OUTPUT_TOKENS,
+    FakeBriefGenerator,
+    PermanentBriefError,
+    TransientBriefError,
+)
+from overwatch.briefs.models import BriefDraft, BriefGeneration, BriefRequest, ClaimDraft
 from overwatch.db.aois import upsert_aoi
 from overwatch.db.briefs import (
     claims_with_evidence,
@@ -23,6 +29,7 @@ from overwatch.db.briefs import (
 )
 from overwatch.db.detections import replace_detections
 from overwatch.db.jobs import create_job
+from overwatch.db.models import NewsArticle
 from overwatch.db.scenes import upsert_scene
 from overwatch.detection.models import ChangeType, Detection
 from overwatch.imagery.models import SceneMeta
@@ -87,6 +94,34 @@ def _seed_brief(session: Session, *, n_detections: int = 1) -> tuple[int, list[i
     ]
     session.commit()
     return brief.id, det_ids
+
+
+def _seed_article(session: Session, brief_id: int) -> int:
+    """Attach one admitted news article to this brief's (aoi, after_scene) pair.
+
+    Commits for the same reason `_seed_brief` does: the task opens its own `session_scope()`
+    on a separate connection and will not see an uncommitted row.
+    """
+    brief = get_brief(session, brief_id)
+    job = create_job(session, brief.aoi_id, {})
+    article = NewsArticle(
+        aoi_id=brief.aoi_id,
+        job_id=job.id,
+        after_scene_id=brief.after_scene_id,
+        url="https://example.com/port-expansion-protest",
+        title="Fishing community protests port expansion",
+        domain="thehindu.com",
+        language="English",
+        seendate=datetime(2024, 1, 5, tzinfo=UTC),
+        gates_passed={},
+        query="q",
+        meta={},
+    )
+    session.add(article)
+    session.flush()
+    article_id = article.id
+    session.commit()
+    return article_id
 
 
 def test_happy_path_validates_first_try(
@@ -242,3 +277,82 @@ def test_skips_brief_not_in_generating_status(
     brief = get_brief(db_session, brief_id)
     assert brief.status == "failed"
     assert brief.error["code"] == "already_done"
+
+
+# --- Phase 5: the task carries articles both ways ----------------------------------
+
+
+def test_articles_reach_the_request_and_a_reported_claim_persists_its_article_link(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The full Phase-5 loop at unit speed: `_build_brief_request` loads the pair's admitted
+    articles onto the request, the model cites one, and `persist_validated` writes the
+    article `EvidenceLink`.
+
+    The validation itself is the proof that the articles arrived: the REAL validator runs
+    here, and Gate 4a rejects any `reported` claim citing an id that is not in
+    `request.articles`. So if `_build_brief_request` had failed to load the article, this
+    brief would land on `rejected` with `unknown_article_id`, not `validated`.
+    """
+    brief_id, det_ids = _seed_brief(db_session, n_detections=1)
+    article_id = _seed_article(db_session, brief_id)
+
+    draft = BriefDraft(
+        headline="Construction at the port AOI, with protest reported.",
+        claims=[
+            ClaimDraft(
+                text="New construction was observed within the AOI.",
+                claim_type="observed",
+                evidence=det_ids,
+            ),
+            ClaimDraft(
+                text="Regional news reports that the expansion drew protest from fishers.",
+                claim_type="reported",
+                article_evidence=[article_id],
+            ),
+        ],
+    )
+
+    class RecordingGenerator:
+        """FakeBriefGenerator records only `failures`; this one keeps the request too, so
+        the wiring can be asserted directly and not just inferred from the outcome."""
+
+        def __init__(self) -> None:
+            self.requests: list[BriefRequest] = []
+
+        def generate(self, request: BriefRequest, failures: list) -> BriefGeneration:
+            self.requests.append(request)
+            return BriefGeneration(
+                draft=draft,
+                model="fake",
+                usage={"input_tokens": FAKE_INPUT_TOKENS, "output_tokens": FAKE_OUTPUT_TOKENS},
+            )
+
+    generator = RecordingGenerator()
+    monkeypatch.setattr(tasks, "get_brief_generator", lambda: generator)
+
+    result = tasks.generate_brief.apply(args=(brief_id,))
+    assert result.state == "SUCCESS"
+
+    # 1. The article was loaded onto the request the model actually saw.
+    assert len(generator.requests) == 1
+    seen = generator.requests[0].articles
+    assert [a.id for a in seen] == [article_id]
+    assert seen[0].domain == "thehindu.com"
+    assert seen[0].seendate == date(2024, 1, 5)  # tz-aware DateTime narrowed to a date
+
+    # 2. It came back out the other side as a persisted article evidence link.
+    db_session.expire_all()
+    assert get_brief(db_session, brief_id).status == "validated"
+
+    pairs = claims_with_evidence(db_session, brief_id)
+    assert [claim.claim_type for claim, _ in pairs] == ["observed", "reported"]
+
+    observed_links = pairs[0][1]
+    assert sorted(link.detection_id for link in observed_links) == sorted(det_ids)
+    assert all(link.evidence_type == "detection" for link in observed_links)
+
+    reported_links = pairs[1][1]
+    assert [link.evidence_type for link in reported_links] == ["article"]
+    assert reported_links[0].article_id == article_id
+    assert reported_links[0].detection_id is None

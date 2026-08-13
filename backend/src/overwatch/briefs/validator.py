@@ -1,6 +1,6 @@
-"""Pure, deterministic validator for LLM-generated intelligence briefs (Phase 4).
+"""Pure, deterministic validator for LLM-generated intelligence briefs (Phase 4 + 5).
 
-Three gates, run per claim:
+FOUR gates, run per claim:
 
 1. **Linkage** — every `observed` claim must cite at least one evidence id, and every
    cited id must resolve to a real detection on the request (`unlinked_claim`,
@@ -12,6 +12,12 @@ Three gates, run per claim:
    figure quoted in the text must be within ±10% of the summed area of the linked
    detections, and any date quoted must exactly equal the request's before/after date
    (`area_mismatch`, `date_mismatch`).
+4. **The observed/reported wall** (Phase 5 design §6) — a claim backed ONLY by news
+   articles is REPORTED SPEECH. It must be framed as such, it may carry NO quantities,
+   and it must cite article ids that resolve. Conversely an `observed` claim may cite no
+   articles at all, and a `mixed` claim must cite BOTH a detection and an article.
+   **The platform never lets journalism masquerade as sensing.** Articles are not
+   measurements; only detections carry figures.
 
 No I/O, no DB, no LLM calls. `validate_brief` is a plain function: `BriefDraft` +
 `BriefRequest` in, `list[Violation]` out. An empty list means the brief is valid.
@@ -22,9 +28,25 @@ from datetime import date
 
 from overwatch.briefs.models import BriefDraft, BriefRequest, ClaimDraft, Violation
 
-# Supported claim types in Phase 4. `reported` and `mixed` are structurally rejected
-# here; Phase 5 is expected to lift that restriction once corroboration is designed.
-_SUPPORTED_CLAIM_TYPES = frozenset({"observed", "context"})
+# Phase 5 lifts Phase 4's restriction: `reported` and `mixed` are now supported, policed
+# by Gate 4 below. All four claim types are legal.
+_SUPPORTED_CLAIM_TYPES = frozenset({"observed", "context", "reported", "mixed"})
+
+# --- Gate 4 (Phase 5 §6): the observed/reported wall -------------------------------
+# A claim backed only by articles must SOUND like reported speech...
+_REPORTED_FRAMING_RE = re.compile(
+    r"\b(reports?|reported|reportedly|according to|regional news|local media|"
+    r"press reports?|news outlets?|coverage indicates|media reports?)\b",
+    re.IGNORECASE,
+)
+# ...and must never wear the clothes of sensing.
+_OBSERVATIONAL_FRAMING_RE = re.compile(
+    r"\b(imagery (?:shows|confirms|reveals|indicates)|"
+    r"satellite (?:imagery |data )?(?:shows|confirms|reveals)|"
+    r"we (?:observe|observed|detect|detected)|detected|is visible|are visible|"
+    r"analysis shows|the data shows|pixels? (?:show|confirm))\b",
+    re.IGNORECASE,
+)
 
 _AREA_TOLERANCE_FRACTION = 0.10
 
@@ -151,11 +173,12 @@ def _check_dates(claim: ClaimDraft, seq: int, request: BriefRequest) -> list[Vio
 
 
 def validate_brief(draft: BriefDraft, request: BriefRequest) -> list[Violation]:
-    """Run the three gates against `draft`. Empty list means the brief is valid."""
+    """Run the four gates against `draft`. Empty list means the brief is valid."""
     if not draft.claims:
         return [Violation(code="empty_brief", message="Brief has no claims.")]
 
     known_ids = {d.id for d in request.detections}
+    known_article_ids = {a.id for a in request.articles}
     violations: list[Violation] = []
 
     for seq, claim in enumerate(draft.claims):
@@ -171,11 +194,26 @@ def validate_brief(draft: BriefDraft, request: BriefRequest) -> list[Violation]:
                 Violation(
                     code="unsupported_claim_type",
                     claim_seq=seq,
-                    message=f"Claim type '{claim.claim_type}' is not supported in Phase 4.",
+                    message=f"Claim type '{claim.claim_type}' is not a supported claim type.",
                     detail={"claim_type": claim.claim_type},
                 )
             )
             continue
+
+        # Gate 4a — cited article ids must resolve (applies to reported AND mixed).
+        if claim.claim_type in ("reported", "mixed"):
+            for aid in claim.article_evidence:
+                if aid not in known_article_ids:
+                    violations.append(
+                        Violation(
+                            code="unknown_article_id",
+                            claim_seq=seq,
+                            message=(
+                                f"Claim cites article id {aid}, which is not a known article."
+                            ),
+                            detail={"article_id": aid},
+                        )
+                    )
 
         if claim.claim_type == "context":
             if _has_quantity(text):
@@ -187,6 +225,87 @@ def validate_brief(draft: BriefDraft, request: BriefRequest) -> list[Violation]:
                     )
                 )
             continue
+
+        # Gate 4b — a `mixed` claim must genuinely straddle both kinds of evidence.
+        # Its quantities are licensed by the DETECTION it cites, so it is exempt from the
+        # no-quantities rule (but the numeric-consistency gate still applies below).
+        if claim.claim_type == "mixed":
+            if not claim.evidence or not claim.article_evidence:
+                violations.append(
+                    Violation(
+                        code="mixed_claim_missing_side",
+                        claim_seq=seq,
+                        message=(
+                            "A 'mixed' claim must cite at least one detection AND at least "
+                            "one article."
+                        ),
+                    )
+                )
+            else:
+                unknown = [eid for eid in claim.evidence if eid not in known_ids]
+                for eid in unknown:
+                    violations.append(
+                        Violation(
+                            code="unknown_evidence_id",
+                            claim_seq=seq,
+                            message=(
+                                f"Claim cites evidence id {eid}, which is not a known detection."
+                            ),
+                            detail={"evidence_id": eid},
+                        )
+                    )
+                linked = [d for d in request.detections if d.id in claim.evidence]
+                if linked:
+                    violations.extend(_check_area(claim, seq, sum(d.area_m2 for d in linked)))
+                violations.extend(_check_dates(claim, seq, request))
+            continue
+
+        # Gate 4c — THE WALL. A claim backed only by articles is REPORTED SPEECH:
+        # it must be framed as such, and it may carry no quantities. Articles are not
+        # measurements. Journalism never masquerades as sensing.
+        if claim.claim_type == "reported":
+            if not claim.article_evidence:
+                violations.append(
+                    Violation(
+                        code="unlinked_reported_claim",
+                        claim_seq=seq,
+                        message="Reported claim cites no article evidence.",
+                    )
+                )
+            if _OBSERVATIONAL_FRAMING_RE.search(text) or not _REPORTED_FRAMING_RE.search(text):
+                violations.append(
+                    Violation(
+                        code="observational_framing_on_reported_claim",
+                        claim_seq=seq,
+                        message=(
+                            "A claim backed only by news articles must use reported-speech "
+                            "framing (e.g. 'Regional news reports that...'), never "
+                            "observational framing. Journalism is not sensing."
+                        ),
+                    )
+                )
+            if _has_quantity(text):
+                violations.append(
+                    Violation(
+                        code="quantified_reported_claim",
+                        claim_seq=seq,
+                        message=(
+                            "A claim backed only by news articles may not carry a quantity. "
+                            "Only detections carry measured figures."
+                        ),
+                    )
+                )
+            continue
+
+        # claim.claim_type == "observed" — Gate 4d: pixels only, no article links.
+        if claim.article_evidence:
+            violations.append(
+                Violation(
+                    code="article_evidence_on_observed_claim",
+                    claim_seq=seq,
+                    message=("An 'observed' claim may not cite article evidence — use 'mixed'."),
+                )
+            )
 
         # claim.claim_type == "observed"
         if not claim.evidence:

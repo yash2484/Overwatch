@@ -19,6 +19,8 @@ def seed() -> list[int]:
                 name=aoi.name,
                 vertical=aoi.vertical,
                 geometry=aoi.geometry(),
+                place_terms=aoi.place_terms,
+                region_terms=aoi.region_terms,
             )
             for _, aoi in sorted(SHOWCASE_AOIS.items())
         ]

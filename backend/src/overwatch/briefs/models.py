@@ -17,7 +17,10 @@ ClaimType = Literal["observed", "context", "reported", "mixed"]
 class ClaimDraft(BaseModel):
     text: str
     claim_type: ClaimType
-    evidence: list[int] = []  # detection ids
+    evidence: list[int] = []  # detection ids — OBSERVED (pixels)
+    # news_article ids — REPORTED (journalism). Kept in a SEPARATE field from `evidence`
+    # so the model structurally cannot conflate sensing with reporting (Phase 5 §6).
+    article_evidence: list[int] = []
 
 
 class BriefDraft(BaseModel):
@@ -40,6 +43,13 @@ class DetectionRow(BaseModel):  # slim view for prompt + validator
     confidence: float
 
 
+class ArticleRow(BaseModel):  # slim view for prompt + validator (Phase 5)
+    id: int
+    title: str
+    domain: str
+    seendate: date
+
+
 class BriefRequest(BaseModel):
     aoi_name: str
     aoi_slug: str
@@ -49,6 +59,7 @@ class BriefRequest(BaseModel):
     before_date: date
     after_date: date
     detections: list[DetectionRow]
+    articles: list[ArticleRow] = []  # Phase 5 — may be empty (fusion off / no survivors)
 
 
 class AttemptFailure(BaseModel):

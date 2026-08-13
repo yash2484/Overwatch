@@ -1,6 +1,19 @@
 from pyproj import Geod
 
-from overwatch.aois import SHOWCASE_AOIS
+from overwatch.aois import DEMO_ORDER, SHOWCASE_AOIS
+
+
+def test_demo_order_covers_every_showcase_aoi() -> None:
+    # list_aois sorts by this, and the console takes aois[0] as its default selection —
+    # a slug missing here would silently fall to the end of the nav.
+    assert set(DEMO_ORDER) == set(SHOWCASE_AOIS)
+    assert len(DEMO_ORDER) == len(SHOWCASE_AOIS)
+
+
+def test_demo_opens_on_the_flood() -> None:
+    # Deliberate: the flood is the change a first-time viewer reads without being taught.
+    assert DEMO_ORDER[0] == "porto-alegre"
+    assert SHOWCASE_AOIS[DEMO_ORDER[0]].vertical == "flood"
 
 
 def test_three_showcase_aois_present() -> None:

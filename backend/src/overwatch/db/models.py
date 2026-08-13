@@ -1,5 +1,6 @@
 """ORM models. scenes = Sentinel-2 scene metadata per AOI window (design spec §4);
-aois/jobs/detections = Phase 3 persistence (design doc 2026-07-07 §2)."""
+aois/jobs/detections = Phase 3 persistence (design doc 2026-07-07 §2);
+news_articles = Phase 5 OSINT fusion (design doc 2026-07-12 §5)."""
 
 import uuid
 from datetime import datetime
@@ -17,7 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -67,6 +68,11 @@ class Aoi(Base):
     geom = mapped_column(
         Geometry(geometry_type="POLYGON", srid=4326, spatial_index=False), nullable=False
     )
+    # Toponym-gate inputs (Phase 5 §4.2). place_terms[0] is the STRICT term GDELT matches
+    # against full article text; region_terms are title-corroboration only. Empty
+    # place_terms -> fusion is skipped for this AOI (logged, never guessed).
+    place_terms: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    region_terms: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     cadence_days: Mapped[int | None] = mapped_column(Integer)  # null = no re-check
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
@@ -183,6 +189,10 @@ class EvidenceLink(Base):
             "evidence_type != 'detection' OR detection_id IS NOT NULL",
             name="ck_evidence_links_detection_id",
         ),
+        CheckConstraint(
+            "evidence_type != 'article' OR article_id IS NOT NULL",
+            name="ck_evidence_links_article_id",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -192,4 +202,41 @@ class EvidenceLink(Base):
     evidence_type: Mapped[str] = mapped_column(Text, nullable=False)
     detection_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("detections.id", ondelete="CASCADE")
+    )
+    article_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("news_articles.id", ondelete="CASCADE")
+    )
+
+
+class NewsArticle(Base):
+    """One GDELT article that passed all three gates (Phase 5 design §5).
+
+    Gate 1 is the TOPONYM gate, not a spatial one — GDELT exposes no article geotag
+    (design §2.2), and its geocoder is centroid-based by GDELT's own documentation.
+    That is why this table carries NO geometry column. Do not add one.
+    """
+
+    __tablename__ = "news_articles"
+    __table_args__ = (
+        UniqueConstraint("aoi_id", "after_scene_id", "url", name="uq_news_articles_aoi_scene_url"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    aoi_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("aois.id", ondelete="CASCADE"), nullable=False
+    )
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False
+    )
+    after_scene_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("scenes.id"), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    domain: Mapped[str] = mapped_column(Text, nullable=False)
+    language: Mapped[str] = mapped_column(Text, nullable=False)
+    seendate: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    gates_passed: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -4,12 +4,18 @@ Pure string-building tests: no LLM calls, no network, no DB. Covers the first-tu
 user message (AOI/pair/stats/detections), the detection-cap truncation behavior
 (largest-by-area survive, true totals still reported, a warning is logged), the
 feedback turns appended per AttemptFailure, and the verbatim SYSTEM_PROMPT content.
+
+Phase 5 adds the SOURCES block: news articles rendered with their ids, plus the rules
+the model must obey when citing them. Those rules are not decoration — the validator's
+Gate 4 enforces every one of them, so the prompt has to state them or the model is being
+set up to fail.
 """
 
 import logging
 from datetime import date
 
 from overwatch.briefs.models import (
+    ArticleRow,
     AttemptFailure,
     BriefDraft,
     BriefRequest,
@@ -211,3 +217,114 @@ def test_system_prompt_contains_citation_and_no_quantities_rules() -> None:
     assert "no numbers, percentages, areas, or dates" in SYSTEM_PROMPT
     assert '"observed"' in SYSTEM_PROMPT
     assert '"context"' in SYSTEM_PROMPT
+
+
+# --- Phase 5: the SOURCES block ----------------------------------------------------
+
+
+def _user_turn(request: BriefRequest) -> str:
+    """The first-turn user message — the whole prompt body the model reads."""
+    return build_messages(request, [])[0]["content"]
+
+
+def _article(id_: int = 99) -> ArticleRow:
+    # The real Novo Progresso corpus article (design §4.4), same row the Gate-4
+    # validator tests use — so prompt and validator are exercised against one story.
+    return ArticleRow(
+        id=id_,
+        title="Brazilian authorities launch probe into Amazon largest single deforester",
+        domain="news.mongabay.com",
+        seendate=date(2023, 8, 11),
+    )
+
+
+def _request_with_articles() -> BriefRequest:
+    request = _request([_detection(1, "vegetation_loss", 50_000.0)])
+    request.articles = [_article()]
+    return request
+
+
+def test_system_prompt_declares_all_four_claim_types() -> None:
+    # Phase 5 legalizes `reported` and `mixed` (validator._SUPPORTED_CLAIM_TYPES). If the
+    # system prompt still said "use only observed and context" while the SOURCES block
+    # below demanded `reported`, the prompt would contradict itself and the model would be
+    # steered straight into a Gate-4 rejection.
+    assert '"reported"' in SYSTEM_PROMPT
+    assert '"mixed"' in SYSTEM_PROMPT
+    assert 'Use only claim types "observed" and "context"' not in SYSTEM_PROMPT
+
+
+def test_prompt_renders_articles_with_ids_and_the_reported_speech_rule() -> None:
+    content = _user_turn(_request_with_articles())
+
+    assert "SOURCES" in content
+    assert "[99]" in content
+    assert "news.mongabay.com" in content
+    assert "2023-08-11" in content
+    assert "Brazilian authorities launch probe" in content
+
+    # The rules the model must obey have to be IN the prompt, not just in the validator.
+    assert "reported" in content.lower()
+    assert "may not" in content.lower() or "never" in content.lower()
+    assert "article_evidence" in content
+    assert "mixed" in content.lower()
+
+
+def test_prompt_omits_the_sources_section_when_there_are_no_articles() -> None:
+    request = _request_with_articles()
+    request.articles = []
+    content = _user_turn(request)
+
+    assert "SOURCES" not in content
+    # No sources => no article ids to cite => the source rules would be noise at best and
+    # an invitation to invent citations at worst.
+    assert "article_evidence" not in content
+
+
+def test_articles_are_capped_at_the_configured_limit_and_truncation_is_logged(caplog) -> None:
+    request = _request_with_articles()
+    request.articles = [
+        ArticleRow(
+            id=i,
+            title=f"Amazon deforestation report {i}",
+            domain="d.com",
+            seendate=date(2023, 8, 11),
+        )
+        for i in range(50)
+    ]
+
+    assert settings.fusion_max_prompt_articles == 10
+
+    with caplog.at_level(logging.INFO, logger="overwatch.briefs.prompt"):
+        content = _user_turn(request)
+
+    # `articles_for_pair` returns chronological order and news_articles stores no score,
+    # so the cap keeps the EARLIEST 10 — ids 0..9 in, 10..49 out. The bracketed form is
+    # collision-safe: "[1]" is not a substring of "[10]".
+    for i in range(10):
+        assert f"[{i}]" in content
+    for i in range(10, 50):
+        assert f"[{i}]" not in content
+
+    assert "mongabay.com" not in content  # the seed article was replaced outright
+    assert "truncat" in caplog.text.lower()
+    assert "50" in caplog.text and "10" in caplog.text
+
+
+def test_article_cap_is_read_from_settings_not_hardcoded(monkeypatch) -> None:
+    # Same guard as `test_truncation_cap_is_read_from_settings_not_hardcoded` does for
+    # detections: if the cap were written as a literal `10`, the test above would still
+    # pass and this one would fail.
+    from overwatch.briefs import prompt as prompt_module
+
+    monkeypatch.setattr(prompt_module.settings, "fusion_max_prompt_articles", 2)
+
+    request = _request_with_articles()
+    request.articles = [_article(id_=i) for i in range(5)]
+
+    content = _user_turn(request)
+
+    for i in range(2):
+        assert f"[{i}]" in content
+    for i in range(2, 5):
+        assert f"[{i}]" not in content

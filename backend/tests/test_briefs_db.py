@@ -1,4 +1,10 @@
-"""Brief repository — persistence + staleness on detection replace-set (design spec §2)."""
+"""Brief repository — persistence + staleness on detection replace-set (design spec §2).
+
+Phase 5: a claim's evidence is now two-sided — detection ids (pixels) and article ids
+(journalism) — and `persist_validated` writes an `EvidenceLink` per id of each kind, with
+the CHECK constraints on `evidence_links` guaranteeing a link of one type can never carry
+the other type's foreign key.
+"""
 
 import itertools
 from datetime import UTC, datetime, timedelta
@@ -20,7 +26,7 @@ from overwatch.db.briefs import (
 )
 from overwatch.db.detections import replace_detections
 from overwatch.db.jobs import create_job
-from overwatch.db.models import DetectionEvent
+from overwatch.db.models import DetectionEvent, NewsArticle
 from overwatch.db.scenes import upsert_scene
 from overwatch.detection.models import ChangeType, Detection
 from overwatch.imagery.models import SceneMeta
@@ -100,6 +106,29 @@ def _seed_detections(
     )
 
 
+def _seed_article(session: Session, aoi_id: int, after_id: int) -> int:
+    """One admitted news article on this pair. Inserted directly rather than through
+    `replace_articles` — what is under test here is brief persistence, not the news
+    repo (test_news_db.py owns that)."""
+    job = create_job(session, aoi_id, {})
+    article = NewsArticle(
+        aoi_id=aoi_id,
+        job_id=job.id,
+        after_scene_id=after_id,
+        url="https://news.mongabay.com/2023/08/amazon-deforester-probe",
+        title="Brazilian authorities launch probe into Amazon largest single deforester",
+        domain="news.mongabay.com",
+        language="English",
+        seendate=datetime(2023, 8, 11, tzinfo=UTC),
+        gates_passed={},
+        query="q",
+        meta={},
+    )
+    session.add(article)
+    session.flush()
+    return article.id
+
+
 def test_create_and_get_brief(db_session: Session) -> None:
     aoi_id, before_id, after_id = _seed_pair(db_session)
     brief = create_brief(
@@ -120,7 +149,7 @@ def test_persist_validated_writes_claims_and_links(db_session: Session) -> None:
         db_session,
         brief.id,
         headline="H",
-        claims=[("obs claim", "observed", det_ids), ("ctx claim", "context", [])],
+        claims=[("obs claim", "observed", det_ids, []), ("ctx claim", "context", [], [])],
         model="claude-opus-4-8",
         usage={"input_tokens": 10, "output_tokens": 5},
         attempts=1,
@@ -149,7 +178,7 @@ def test_latest_validated_brief_skips_non_validated(db_session: Session) -> None
         db_session,
         old.id,
         headline="old",
-        claims=[("c", "context", [])],
+        claims=[("c", "context", [], [])],
         model="m",
         usage={},
         attempts=1,
@@ -162,7 +191,7 @@ def test_latest_validated_brief_skips_non_validated(db_session: Session) -> None
         db_session,
         new.id,
         headline="new",
-        claims=[("c", "context", [])],
+        claims=[("c", "context", [], [])],
         model="m",
         usage={},
         attempts=1,
@@ -181,7 +210,7 @@ def test_replace_detections_marks_validated_briefs_stale(db_session: Session) ->
         db_session,
         brief.id,
         headline="H",
-        claims=[("c", "observed", det_ids)],
+        claims=[("c", "observed", det_ids, [])],
         model="m",
         usage={},
         attempts=1,
@@ -215,7 +244,7 @@ def test_replace_detections_leaves_other_pairs_and_statuses_alone(db_session: Se
         db_session,
         validated_other_pair.id,
         headline="H",
-        claims=[("c", "context", [])],
+        claims=[("c", "context", [], [])],
         model="m",
         usage={},
         attempts=1,
@@ -282,3 +311,64 @@ def test_detection_rows_for_pair_orders_by_area_desc(db_session: Session) -> Non
     assert result_areas == [18_200.0, 12_000.0, 6_200.0]
     assert all(a > b for a, b in zip(result_areas, result_areas[1:], strict=False))
     assert 99_999.0 not in result_areas
+
+
+# --- Phase 5: article evidence -----------------------------------------------------
+
+
+def test_persist_validated_writes_article_evidence_links(db_session: Session) -> None:
+    aoi_id, before_id, after_id = _seed_pair(db_session)
+    article_id = _seed_article(db_session, aoi_id, after_id)
+    brief = create_brief(
+        db_session, aoi_id=aoi_id, before_scene_id=before_id, after_scene_id=after_id
+    )
+    persist_validated(
+        db_session,
+        brief.id,
+        headline="h",
+        claims=[("Regional news reports a probe.", "reported", [], [article_id])],
+        model="m",
+        usage={},
+        attempts=1,
+        failures=[],
+    )
+    links = claims_with_evidence(db_session, brief.id)[0][1]
+    assert [link.evidence_type for link in links] == ["article"]
+    assert links[0].article_id == article_id
+    assert links[0].detection_id is None
+
+
+def test_persist_validated_writes_both_link_kinds_for_a_mixed_claim(db_session: Session) -> None:
+    # A `mixed` claim straddles the wall: it cites a detection AND an article. Both links
+    # must land on the one claim, each carrying only its own foreign key — which is also
+    # what the two CHECK constraints on evidence_links enforce at the DB level.
+    aoi_id, before_id, after_id = _seed_pair(db_session)
+    det_ids = _seed_detections(db_session, aoi_id, before_id, after_id, n=1)
+    article_id = _seed_article(db_session, aoi_id, after_id)
+    brief = create_brief(
+        db_session, aoi_id=aoi_id, before_scene_id=before_id, after_scene_id=after_id
+    )
+    persist_validated(
+        db_session,
+        brief.id,
+        headline="h",
+        claims=[
+            (
+                "Clearing is visible; regional news reports a probe.",
+                "mixed",
+                det_ids,
+                [article_id],
+            )
+        ],
+        model="m",
+        usage={},
+        attempts=1,
+        failures=[],
+    )
+    links = claims_with_evidence(db_session, brief.id)[0][1]
+    by_type = {link.evidence_type: link for link in links}
+    assert set(by_type) == {"detection", "article"}
+    assert by_type["detection"].detection_id == det_ids[0]
+    assert by_type["detection"].article_id is None
+    assert by_type["article"].article_id == article_id
+    assert by_type["article"].detection_id is None
