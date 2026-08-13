@@ -74,18 +74,18 @@ def test_absolute_bound_directions_take_the_threshold_as_the_bound() -> None:
     assert ThresholdRule(map="ndvi_before", direction="at_least", threshold=0.5).threshold == 0.5
 
 
-def test_port_preset_has_a_coastal_prior() -> None:
-    # Inland construction is real change that no spectral threshold can disqualify; only its
-    # location can. Port works are coastal, so the preset carries a distance-to-water bound.
-    assert VERTICAL_PRESETS["port"].near_water_m is not None
-    assert VERTICAL_PRESETS["port"].near_water_m > 0.0
+def test_port_preset_focuses_on_the_terminal_not_the_shoreline() -> None:
+    # Off-subject construction is real change that no spectral threshold can disqualify; only
+    # its location can. A shoreline buffer was tried first and withdrawn — the AOI is coastline
+    # end to end, so distance to water barely discriminated. Distance to the subject does.
+    assert VERTICAL_PRESETS["port"].focus_radius_m == 2_000.0
 
 
-def test_verticals_without_a_spatial_prior_leave_it_unset() -> None:
-    # Deforestation and flooding are not constrained to coastlines; the prior must be opt-in
-    # per preset rather than a global filter.
-    assert VERTICAL_PRESETS["forest"].near_water_m is None
-    assert VERTICAL_PRESETS["flood"].near_water_m is None
+def test_verticals_with_diffuse_change_have_no_focus_radius() -> None:
+    # Deforestation and flooding spread across a window by nature; anchoring them to their own
+    # largest polygon would delete most of what they exist to find.
+    assert VERTICAL_PRESETS["forest"].focus_radius_m is None
+    assert VERTICAL_PRESETS["flood"].focus_radius_m is None
 
 
 def test_forest_preset_has_was_forest_precondition() -> None:

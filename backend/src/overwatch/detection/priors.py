@@ -1,60 +1,34 @@
-"""Spatial priors: physical constraints on WHERE a change can plausibly be (design spec §6).
+"""Spatial priors: constraints on WHERE a change can plausibly be (design spec §6).
 
-A threshold rule gates on how a pixel changed. A prior gates on where the pixel sits. Some
-verticals need both, because the spectral evidence can be perfectly real and still be the wrong
-subject: construction 3 km inland is a genuine structural rebuild, so no SSIM threshold rejects
-it — raising the threshold far enough to drop it drops the harbour too. Only its distance from
-the water disqualifies it.
+A threshold rule gates on how a pixel changed. A prior gates on where it sits. Some verticals
+need both, because the spectral evidence can be perfectly real and still be the wrong subject:
+construction across the window from the harbour is a genuine structural rebuild, so no SSIM
+threshold rejects it — raising the threshold far enough to drop it drops the harbour too.
 
-Pure module: numpy in, boolean mask out. No I/O, no LLM.
+Pure module: geometry in, geometry out. No I/O, no LLM.
 """
 
-import numpy as np
-from scipy import ndimage
-
-# NDWI's own design boundary (McFeeters 1996): water positive, land negative. This is the water
-# cut for priors only — detection rules carry their own thresholds in the preset.
-WATER_NDWI = 0.0
+from overwatch.detection.models import Detection
 
 
-def near_water_mask(
-    ndwi_before: np.ndarray,
-    *,
-    buffer_m: float,
-    pixel_size_m: float,
-    water_ndwi: float = WATER_NDWI,
-    min_water_area_m2: float = 0.0,
-) -> np.ndarray:
-    """True where a pixel lies within `buffer_m` of open water in the BEFORE image.
+def keep_near_largest(detections: list[Detection], *, radius_m: float) -> list[Detection]:
+    """Keep changes within `radius_m` of the largest one, which anchors the subject.
 
-    Measured on the before image on purpose: reclamation turns sea into land, so a buffer drawn
-    around the AFTER image's water would disqualify the very pixels a port build is made of.
+    A monitored site is one dominant structure plus its apron: at Vizhinjam the terminal is
+    39.6 ha while no other polygon reaches 1.1 ha, so "largest" identifies the subject without
+    any per-AOI configuration. Distance is edge to edge, not centroid to centroid — a quay runs
+    for hundreds of metres, and measuring from its middle would push its own apron out.
 
-    `min_water_area_m2` drops water bodies below a size before the buffer is drawn. Without it
-    the prior degrades wherever small water is common: on the real Vizhinjam pair, coastal
-    Kerala's ponds and backwater put every pixel of the AOI within 2 km of "water", so a coastal
-    buffer kept 20 of 22 detections and discriminated nothing. A port is on the sea, and the sea
-    is large, so size is what separates a coastline from a paddy field.
+    Anchoring on the largest rather than the first matters: polygonize emits in label order,
+    which follows raster position, so the first element is whichever speck was labelled first.
 
-    Fails closed. A window holding no qualifying water yields an all-False mask rather than
-    silently passing everything, so a wrong bbox or a fully clouded coast surfaces as zero
-    detections instead of as a quietly disabled prior. NaN pixels never count as water.
+    An earlier version of this prior measured distance to open water instead. It was withdrawn:
+    the Vizhinjam AOI is 4.5 x 5.5 km of coastline, so every pixel is within 2 km of the sea and
+    the gate removed almost nothing, while the tiny NDWI-positive specks scattered inland each
+    seeded a buffer of their own. Proximity to the subject is the question; proximity to water
+    was only ever a proxy for it.
     """
-    water = np.isfinite(ndwi_before) & (ndwi_before >= water_ndwi)
-    if min_water_area_m2 > 0:
-        water = _drop_small_bodies(water, min_water_area_m2, pixel_size_m**2)
-    if not water.any():
-        return np.zeros(ndwi_before.shape, dtype=bool)
-    distance_m = ndimage.distance_transform_edt(~water) * pixel_size_m
-    return np.asarray(distance_m <= buffer_m, dtype=bool)
-
-
-def _drop_small_bodies(water: np.ndarray, min_area_m2: float, pixel_area_m2: float) -> np.ndarray:
-    """Keep only connected water bodies of at least `min_area_m2`."""
-    labels, count = ndimage.label(water)
-    if count == 0:
-        return water
-    areas = np.bincount(labels.ravel()) * pixel_area_m2
-    keeps = areas >= min_area_m2
-    keeps[0] = False  # label 0 is the non-water background
-    return keeps[labels]
+    if len(detections) < 2:
+        return list(detections)
+    anchor = max(detections, key=lambda d: d.area_m2)
+    return [d for d in detections if d.geometry.distance(anchor.geometry) <= radius_m]

@@ -24,8 +24,8 @@ from tests.synthetic import (
 RECT = (40, 50, 30, 50)  # 10 x 20 px = 200 px = 20,000 m² — clears every min-area floor
 DETECTOR = ClassicalChangeDetector()
 
-COAST_SHAPE = (120, 400)  # 4 km wide: room for a build beside the sea AND one far inland
-SEA = (0, 120, 0, 20)  # 200 m of open water down the left edge
+SITE_SHAPE = (120, 400)  # 4 km wide: room for the terminal AND a stray well outside 2 km
+TERMINAL = (30, 90, 30, 90)  # 60 x 60 px = 36 ha, the dominant structure the prior anchors on
 
 
 def _pair(
@@ -37,17 +37,12 @@ def _pair(
     return before, after
 
 
-def _coastal_pair(change_rect: tuple[int, int, int, int]) -> tuple[AOIWindow, AOIWindow]:
-    """Forested coastline with open water on the left; BUILT injected at `change_rect` after.
-
-    The sea is injected with one seed into both dates, so it is byte-identical across the pair
-    and contributes no SSIM dissimilarity of its own.
-    """
-    before = flat_window(FOREST, shape=COAST_SHAPE, seed=1)
-    after = flat_window(FOREST, shape=COAST_SHAPE, seed=2)
-    for window in (before, after):
-        inject_rect(window, WATER, SEA, seed=3)
-    inject_rect(after, BUILT, change_rect)
+def _site_pair(stray_rect: tuple[int, int, int, int]) -> tuple[AOIWindow, AOIWindow]:
+    """A big terminal build plus one smaller build elsewhere, both appearing in the after scene."""
+    before = flat_window(FOREST, shape=SITE_SHAPE, seed=1)
+    after = flat_window(FOREST, shape=SITE_SHAPE, seed=2)
+    inject_rect(after, BUILT, TERMINAL)
+    inject_rect(after, BUILT, stray_rect, seed=13)
     return before, after
 
 
@@ -116,28 +111,29 @@ def test_port_reclamation_detected() -> None:
     assert _covers(det.geometry, rect_geometry(RECT)) > 0.9
 
 
-def test_port_landward_construction_near_the_water_also_detected() -> None:
-    # Regression guard for the fix: the OLD index-gated rule vetoed non-water builds and left
-    # the terminal body half-outlined. SSIM is agnostic to prior cover, so vegetation -> built
-    # is caught too — the whole terminal, not just its water-facing edge. (Bare -> built also
-    # is on real imagery, via texture change the flat synthetic fixtures don't model.)
-    # This build sits 200-400 m from the waterline, so the coastal prior keeps it.
-    rect = (40, 60, 40, 60)
-    before, after = _coastal_pair(rect)
-    [det] = DETECTOR.detect(before, after, VERTICAL_PRESETS["port"])
-    assert det.change_type is ChangeType.CONSTRUCTION
-    assert _covers(det.geometry, rect_geometry(rect)) > 0.9
+def test_port_keeps_construction_beside_the_terminal() -> None:
+    # SSIM is agnostic to prior cover, so vegetation -> built is caught as readily as
+    # sea -> concrete; the OLD index-gated rule vetoed non-water builds and left the terminal
+    # body half-outlined. The focus prior must not reintroduce that: an apron 300 m from the
+    # terminal is exactly the port-adjacent development the console is meant to show.
+    stray = (40, 60, 120, 140)
+    before, after = _site_pair(stray)
+    dets = DETECTOR.detect(before, after, VERTICAL_PRESETS["port"])
+    assert len(dets) == 2
+    assert all(d.change_type is ChangeType.CONSTRUCTION for d in dets)
+    assert max(_covers(d.geometry, rect_geometry(stray)) for d in dets) > 0.9
 
 
-def test_port_ignores_construction_far_inland() -> None:
-    # Vizhinjam kept flagging scattered inland buildings well away from the harbour. Those ARE
+def test_port_drops_construction_far_from_the_terminal() -> None:
+    # Vizhinjam kept flagging scattered buildings well away from the harbour. Those ARE
     # structural change — on the real pair they scored ssim_dissim ~0.87, as high as the
     # terminal itself — so no SSIM threshold separates them: raising it drops the terminal too.
-    # What disqualifies them is location. Port works are on the sea, so the gate is geometric,
-    # applied alongside the spectral rule rather than instead of it.
-    rect = (40, 60, 350, 370)  # 3.3 km inland: outside the preset's buffer
-    before, after = _coastal_pair(rect)
-    assert DETECTOR.detect(before, after, VERTICAL_PRESETS["port"]) == []
+    # What disqualifies them is location, so the gate is geometric, applied alongside the
+    # spectral rule rather than instead of it.
+    stray = (40, 60, 350, 370)  # 2.6 km from the terminal's edge, outside the 2 km radius
+    before, after = _site_pair(stray)
+    [det] = DETECTOR.detect(before, after, VERTICAL_PRESETS["port"])
+    assert _covers(det.geometry, rect_geometry(TERMINAL)) > 0.9
 
 
 def test_no_change_yields_no_detections() -> None:

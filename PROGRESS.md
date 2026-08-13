@@ -70,7 +70,7 @@ user approved the spend, detection was re-run and all three briefs regenerated (
 | AOI | vertical | previous | now | change |
 |---|---|---|---|---|
 | porto-alegre | flood | 66 det / 1,932.7 ha | 66 det / 1,932.7 ha | **unchanged — gate withdrawn, see below** |
-| vizhinjam | port | 22 det / 83.3 ha | 14 det / **77.8 ha** | −5.5 ha (93% kept) |
+| vizhinjam | port | 22 det / 83.3 ha | 16 det / **78.9 ha** | −4.4 ha (95% kept) |
 | novo-progresso | forest | 88 det / 163.7 ha | 88 det / 163.7 ha | unchanged (no gate added) |
 
 - **Flood: an absolute after-image floor was shipped and WITHDRAWN the same day. It was wrong.**
@@ -101,22 +101,29 @@ user approved the spend, detection was re-run and all three briefs regenerated (
   the threshold as a magnitude about zero, which cannot express a bound whose sign disagrees with
   its direction ("NDVI at most +0.10"). The new directions take the threshold literally, so 0.0 and
   negatives are ordinary values. No shipped preset uses them yet; the SWIR work will.
-- **Port: the first *spatial* prior (`near_water_m=1000`, `near_water_min_body_m2=100_000`).** Inland
-  buildings scored `ssim_dissim` ~0.87, **as high as the terminal itself** — they are real
-  construction, so no threshold separates them (raising it drops the terminal too). Only location
-  disqualifies them. Strays >1 km from the terminal fall **13 → 6** while the near-terminal cluster
-  survives intact (34.9 → 34.3 ha, 98%). **The size floor carries as much weight as the distance**:
-  the before-image water mask holds the 1,538 ha sea *plus 16 specks of ≤0.1 ha*, each seeding its
-  own buffer — without the floor the same 1 km buffer keeps 20 of 22 and gates almost nothing.
-  2 km gates nothing at all (the AOI is only 4.5 × 5.5 km, so the whole window is within 2 km of sea).
-- **Honest limit:** the gate halves the strays, it does not clear them. The remaining 6 are *also*
-  coastal, just further along the same shore. Distance-to-water cannot see "is this port-related?" —
-  that residue is semantic, and it is the one place in this pipeline where an LLM would genuinely
-  earn its cost.
-- **New module** `detection/priors.py` (`near_water_mask`) — pure numpy, fails **closed**: a window
-  with no qualifying water returns an all-False mask, so a wrong bbox or clouded coast surfaces as
-  zero detections instead of a silently disabled prior. `MapName` gained `ndwi_after`; the detector
-  gained an `_after` branch symmetric with `_before`.
+- **Port: the first *spatial* prior — anchored on the TERMINAL, not the shoreline.** Off-subject
+  buildings scored `ssim_dissim` ~0.87, **as high as the terminal itself**, so they are real
+  construction and no threshold separates them (raising it drops the terminal too). Only location
+  disqualifies them. Final: **`focus_radius_m=2000`**, keeping detections within 2 km of the largest
+  polygon. **22 det / 83.3 ha → 16 / 78.9 ha**: the whole ≤2 km cluster survives untouched (8
+  polygons at ≤1 km / 34.9 ha, 7 at 1–2 km / 4.4 ha) and all six scattered sub-hectare polygons
+  beyond 2 km are dropped. 95% of detected area kept.
+- **A shoreline buffer was shipped first and withdrawn.** `near_water_m=1000` + a 10 ha minimum
+  water-body size gave 14 det / 77.8 ha, but it was the wrong question: the AOI is 4.5 × 5.5 km of
+  coast, so *every* pixel is within 2 km of the sea (a 2 km water buffer gates nothing at all),
+  while 1 km reached the strays only by also cutting five genuine near-port polygons. It also needed
+  the size floor as a patch, because the water mask holds the 1,538 ha sea **plus 16 specks of
+  ≤0.1 ha** that each seeded a buffer of their own. Proximity to water was only ever a proxy for
+  proximity to the port; the anchor says it directly and needs no per-AOI configuration (the
+  terminal is 39.6 ha against a next-largest of ~1.1 ha).
+- **Deliberately permissive, per user direction:** map the change completely first, trim later.
+  Whatever survives is a *relevance* question ("is this port work?") that geometry cannot answer,
+  and that judgement is the LLM layer's job — the one place in this pipeline where an LLM earns
+  its cost, since the spectral and geometric evidence is already exhausted.
+- **New module** `detection/priors.py` (`keep_near_largest`) — pure geometry, applied *after*
+  polygonization because the anchor does not exist until regions are labelled and measured.
+  Distance is edge-to-edge, not centroid-to-centroid: a quay runs hundreds of metres and centroid
+  distance would push its own apron outside the radius.
 
 ### Fixed: the after-pane sometimes rendered bare basemap under the polygons (2026-08-13)
 

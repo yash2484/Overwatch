@@ -13,7 +13,7 @@ from overwatch.detection.models import Detection
 from overwatch.detection.polygonize import polygonize_mask
 from overwatch.detection.postprocess import clean_mask, rule_mask
 from overwatch.detection.presets import DetectionPreset
-from overwatch.detection.priors import near_water_mask
+from overwatch.detection.priors import keep_near_largest
 from overwatch.imagery.masking import apply_mask, usable_mask
 from overwatch.imagery.models import AOIWindow
 
@@ -37,23 +37,17 @@ class ClassicalChangeDetector:
         _check_coregistered(before, after)
         usable = usable_mask(before.scl) & usable_mask(after.scl)
         maps = _change_maps(before, after, preset, usable)
-        gate = rule_mask(maps, preset.rules, usable)
-        if preset.near_water_m is not None:
-            # Spatial prior, AND-ed in like any other gate but kept out of `maps`: it constrains
-            # where a change counts, so it is not a change map and has no place in a detection's
-            # contributing_indices.
-            gate &= near_water_mask(
-                ndwi(_masked_bands(before, usable)),
-                buffer_m=preset.near_water_m,
-                pixel_size_m=abs(before.transform.a),
-                min_water_area_m2=preset.near_water_min_body_m2,
-            )
         mask = clean_mask(
-            gate,
+            rule_mask(maps, preset.rules, usable),
             open_px=preset.morph_open_px,
             close_px=preset.morph_close_px,
         )
-        return polygonize_mask(mask, maps, preset, before.transform, before.epsg)
+        detections = polygonize_mask(mask, maps, preset, before.transform, before.epsg)
+        if preset.focus_radius_m is not None:
+            # Applied after polygonization, not as a mask gate: the anchor is the largest
+            # detection, which does not exist until the regions have been labelled and measured.
+            detections = keep_near_largest(detections, radius_m=preset.focus_radius_m)
+        return detections
 
 
 def _check_coregistered(before: AOIWindow, after: AOIWindow) -> None:

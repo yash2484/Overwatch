@@ -59,13 +59,10 @@ class DetectionPreset(BaseModel):
     morph_close_px: int = 3
     ssim_band: str = "red"  # band the ssim_dissim map is computed from
     # Spatial prior, opt-in per vertical: when set, a detection must lie within this many metres
-    # of open water in the before image. Verticals that are not location-constrained leave it
-    # None rather than inheriting a filter that makes no physical sense for them.
-    near_water_m: float | None = Field(default=None, gt=0)
-    # Minimum size for a water body to count as coastline at all. Guards the prior against
-    # regions where small water is everywhere (ponds, paddy, backwater), which would otherwise
-    # place the whole AOI "near water" and neuter the gate.
-    near_water_min_body_m2: float = Field(default=0.0, ge=0)
+    # of the LARGEST detection, which anchors the subject being watched. Verticals whose change
+    # is diffuse by nature (deforestation, flooding) leave it None rather than inheriting a
+    # filter that would delete most of what they are meant to find.
+    focus_radius_m: float | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def _primary_map_has_rule(self) -> "DetectionPreset":
@@ -95,21 +92,22 @@ VERTICAL_PRESETS: dict[str, DetectionPreset] = {
         # them from the harbour, because raising it far enough drops the harbour too. What
         # disqualifies them is location: port works are on the sea. So the gate is geometric,
         # applied alongside the spectral rule rather than instead of it.
-        # 1 km measured on the real pair: 22 detections / 83.3 ha -> 14 / 77.8 ha, dropping eight
-        # small inland polygons holding 5.5 ha between them while keeping 93% of detected area.
-        # 2 km gates nothing (the AOI is only 4.5 x 5.5 km, so the whole window is within 2 km of
-        # the sea); 500 m starts eating quay-adjacent development the demo wants to show.
-        # The size floor carries as much weight as the distance: the before-image water mask
-        # holds the 1,538 ha sea plus 16 specks of <=0.1 ha inland, and each speck seeds its own
-        # buffer. Without the floor the same 1 km buffer keeps 20 of 22. 10 ha clears the specks
-        # by four orders of magnitude while admitting any genuinely navigable water.
+        # The prior is distance to the TERMINAL, not to water. A shoreline buffer was shipped
+        # first and withdrawn: the AOI is 4.5 x 5.5 km of coast, so 2 km from water covers the
+        # whole window and gates nothing, while 1 km cut five genuine near-port polygons to
+        # reach the strays. Proximity to water was only ever a proxy for proximity to the port.
+        # 2 km from the largest detection says it directly: 22 -> 16 polygons, 83.3 -> 78.9 ha,
+        # keeping 95% of detected area and the entire near-terminal cluster while dropping the
+        # six scattered sub-hectare polygons over 2 km out.
+        # Deliberately permissive. Mapping the change completely matters more here than trimming
+        # it, and the leftover off-subject polygons are a relevance question ("is this port
+        # work?") that geometry cannot answer — that judgement is the LLM layer's job.
         rules=[
             ThresholdRule(map="ssim_dissim", direction="increase", threshold=0.55),
         ],
         primary_map="ssim_dissim",
         min_area_m2=5_000.0,
-        near_water_m=1_000.0,
-        near_water_min_body_m2=100_000.0,
+        focus_radius_m=2_000.0,
     ),
     "forest": DetectionPreset(
         vertical="forest",
