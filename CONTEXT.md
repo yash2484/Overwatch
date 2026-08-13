@@ -70,6 +70,33 @@ deepening therefore reads as new flooding.
 - Note the direction convention: `direction="decrease"` means `value <= -threshold`, so a "must be low"
   precondition is expressed as a decrease rule (see `rule_mask`).
 
+## Gate 3 sums the linked detections — one claim, one quantity
+
+The numeric validator compares a quoted area against the **sum of every detection linked to that
+claim**, not against any individual one. A claim that quotes two areas and links both detections
+therefore fails twice: each quote is measured against the combined total.
+
+- Observed live on the first real LLM brief: *"a single construction zone of about 396,500 m² and
+  an adjacent area of roughly 217,200 m²"* with both detections linked → two `area_mismatch`
+  violations, each citing `linked_area_m2=613700` (the sum). The regeneration loop split them into
+  one-detection-per-claim statements and validated on attempt 2.
+- The rule this enforces: **one claim, one quantity, one evidence set.** It is why the prompt must
+  push the model toward atomic claims — and it is a genuine accuracy property, not pedantry, since
+  a reader cannot tell which polygon a number refers to when several are cited together.
+- Practical consequence for prompt work: expect a first-attempt rejection rate on multi-figure
+  claims, and budget for `brief_max_attempts` accordingly (novo-progresso needed all 3).
+
+## Demo briefs and real briefs share a table — the seeder is destructive
+
+`seed_briefs` calls `_purge_briefs`, which deletes **every** brief for an AOI before writing its
+hand-authored one. Run it after a live `generate_brief` and the paid Anthropic output is gone with
+no warning.
+
+- Guard: `_has_real_brief()` treats any **validated** brief whose `model != "demo-seed"` as real
+  and skips that AOI; `--force` overrides. `DEMO_MODEL` is the single source of that literal.
+- The distinction is the `model` column, not the status — both kinds land as `validated`, because
+  the seeder calls `persist_validated` directly and bypasses the validator entirely.
+
 ## "Zero detections" is ambiguous — check for a job row before touching thresholds
 
 An AOI serving **0 detections** has two completely different causes, and they look identical from the API:

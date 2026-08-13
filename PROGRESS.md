@@ -121,6 +121,34 @@ Phase 4 — Briefs + evidence chain: **implementation complete + reviewed; live 
 Phase 3 merged to main via PR #7 (`3e1097f`, 2026-07-09); merge verified byte-identical to branch tip `5cf599d`, local main synced, stale branch deleted. CI on the merge commit not yet confirmed green — `gh` is installed (2.96.0) but needs `gh auth login` before it can query Actions.
 
 ## Last verified working
+**LIVE LLM BRIEFS — Phase 4 live gate GREEN and Phase 5 item A GREEN (2026-08-04, over HTTP).**
+The user funded a key ($0.79). All three AOIs now carry **real Anthropic-generated briefs**
+(`model=claude-opus-4-8`), replacing the hand-authored `demo-seed` ones. Total spend **$0.306**
+(measured from persisted `usage`, priced at $5/$25 per MTok):
+
+| AOI | brief | attempts | input | output | cost |
+|---|---|---|---|---|---|
+| vizhinjam | 1255 | 2 | 4,674 | 1,589 | $0.063 |
+| novo-progresso | 1256 | 3 | 12,600 | 3,544 | $0.152 |
+| porto-alegre | 1257 | 2 | 8,834 | 1,875 | $0.091 |
+
+- **Evidence chain proven end-to-end: 91 evidence links across the three briefs, 0 dangling.**
+  Every `observed` claim's links resolve to detections in that brief's own `(aoi, before, after)`
+  pair, and quoted areas match the stored geometry (vizhinjam: "833,100 m²" = the 83.3 ha total,
+  "396,500 m²" = the 39.65 ha largest polygon).
+- **The regeneration loop self-healed a real failure.** Vizhinjam attempt 1 wrote one claim quoting
+  *two* areas while linking *both* detections, so Gate 3 compared each quote against the **sum**
+  (613,700 m²) and rejected all five numbers with `area_mismatch`. Attempt 2 split them into
+  one-detection-per-claim statements and validated. Novo-progresso needed all 3 attempts.
+- **Gate 4 (observed/reported wall) held live.** Porto-alegre's brief carries two `reported` claims
+  citing **7 real news articles with zero detection links**, framed as reported speech ("News
+  outlets reported that…"). This is Phase 5's blocked item A — *articles cited in a validated
+  brief, proven by the SQL join* — now **done**.
+- ⚠️ **`seed_briefs` purges every brief for an AOI**, so re-running it would have destroyed the
+  paid output. It now refuses when a validated non-`demo-seed` brief exists (`--force` overrides);
+  verified live — all three skipped, real briefs survived.
+- Gate after the change: **300 passed**, ruff check clean, ruff format 120 files.
+
 **Flood / porto-alegre resolved (2026-08-03, in-container + over HTTP):**
 Root cause was **not** detection tuning: porto-alegre had **0 job rows** — the flood detector had never
 run on it. Scenes 17/18 (`S2A_22JDM_20240418` → `S2A_22JDM_20240521`, both usable ≈1.000) were ingested

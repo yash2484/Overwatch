@@ -13,6 +13,8 @@ Run:  docker compose exec -T api python -m overwatch.db.seed_briefs
 
 from __future__ import annotations
 
+import sys
+
 from sqlalchemy import delete, select
 
 from overwatch.db.aois import get_aoi
@@ -22,6 +24,10 @@ from overwatch.db.models import Brief, BriefClaim, DetectionEvent, EvidenceLink
 
 # (text, claim_type, detection_ids, article_ids) — the shape persist_validated wants.
 Claim = tuple[str, str, list[int], list[int]]
+
+# Marks a brief as hand-authored. Any other model value on a validated brief means the
+# Anthropic API produced it, which the seeder refuses to overwrite (see _has_real_brief).
+DEMO_MODEL = "demo-seed"
 
 
 def _ha(m2: float) -> str:
@@ -153,6 +159,23 @@ SEEDERS = {
 }
 
 
+def _has_real_brief(session, aoi_id: int) -> bool:
+    """True if a real LLM-generated brief exists for the AOI.
+
+    The seeder purges every brief for an AOI before writing its demo one, so running it
+    after a live ``generate_brief`` run would silently destroy real, paid-for output. Any
+    validated brief whose model is not ``demo-seed`` came from the Anthropic API.
+    """
+    return (
+        session.scalar(
+            select(Brief.id)
+            .where(Brief.aoi_id == aoi_id, Brief.status == "validated", Brief.model != DEMO_MODEL)
+            .limit(1)
+        )
+        is not None
+    )
+
+
 def _purge_briefs(session, aoi_id: int) -> None:
     """Delete any existing briefs for the AOI in FK order (dev seed is re-runnable)."""
     brief_ids = list(session.scalars(select(Brief.id).where(Brief.aoi_id == aoi_id)))
@@ -169,6 +192,7 @@ def _purge_briefs(session, aoi_id: int) -> None:
 
 
 def main() -> None:
+    force = "--force" in sys.argv
     with session_scope() as session:
         for slug, seeder in SEEDERS.items():
             aoi = get_aoi(session, slug)
@@ -184,6 +208,12 @@ def main() -> None:
             )
             if latest is None:
                 print(f"skip {slug}: no detections")
+                continue
+            if _has_real_brief(session, aoi.id) and not force:
+                print(
+                    f"skip {slug}: a real LLM brief exists — seeding would delete it "
+                    "(--force to override)"
+                )
                 continue
             rows = detection_rows_for_pair(
                 session,
@@ -204,7 +234,7 @@ def main() -> None:
                 brief.id,
                 headline=headline,
                 claims=claims,
-                model="demo-seed",
+                model=DEMO_MODEL,
                 usage={},
                 attempts=1,
                 failures=[],
