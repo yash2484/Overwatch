@@ -183,8 +183,10 @@ audit context; this is the authoritative dependency-ordered queue.
 - [ ] **After the user approves the localhost state, update `README.md`.** Bring setup commands,
   architecture, current demo data, verified accuracy claims, known limitations, and the branch/PR
   workflow in line with the shipped project; verify every command and metric before committing.
-- [ ] Run the final diff/review/verification gate, then push `fix/porto-alegre-active-pair` and open a
-  PR. Push and PR creation require explicit user approval; the user performs the final merge.
+- [x] Run the final diff/review/verification gate and publish the verified checkpoint. The user
+  explicitly directed a direct fast-forward push to `main`, superseding the planned PR for this
+  batch; `origin/main` advanced through `e0d5375`, and GitHub Actions run `31835452108` passed its
+  backend and frontend jobs.
 - [ ] Resume `phase-accuracy-benchmarks`: reconcile its duplicated selector/Compose edits with this
   branch, then commit the EMSN194 adapter, runner, tests, evidence record, `PROGRESS.md`, and
   `CONTEXT.md` updates through its own reviewed PR. The measured single-case flood result is
