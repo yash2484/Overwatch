@@ -77,6 +77,20 @@ def test_scl_gate_skips_scene_that_metadata_calls_clear(caplog) -> None:
     assert any("skipping b" in r.message for r in caplog.records)
 
 
+def test_default_search_does_not_veto_a_usable_aoi_with_high_tile_cloud_metadata() -> None:
+    # Porto Alegre on 2024-05-08 is the real case: Earth Search says 72.34% cloud for
+    # the full tile, while the much smaller AOI is 88.44% usable according to SCL.
+    provider = FakeProvider(
+        scenes=[_scene("usable-aoi", 8, 72.34)],
+        windows={"usable-aoi": _window(4)},
+    )
+
+    sel = find_usable_scene(provider, GEOM, date(2021, 1, 7), date(2021, 1, 9))
+
+    assert sel is not None and sel.scene.stac_id == "usable-aoi"
+    assert provider.read_calls == ["usable-aoi"]
+
+
 def test_widening_finds_scene_outside_original_window() -> None:
     provider = FakeProvider(
         scenes=[_scene("late", 10, 5.0, month=2)],  # Feb 10, outside Jan window

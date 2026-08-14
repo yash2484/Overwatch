@@ -30,7 +30,9 @@ def find_usable_scene(
     start: date,
     end: date,
     *,
-    max_cloud_pct: float = 60.0,
+    # Catalog cloud covers the full Sentinel tile, not this AOI. Keep it as a ranking
+    # signal but do not let it veto a candidate before the AOI-level SCL gate sees it.
+    max_cloud_pct: float = 100.0,
     min_usable: float = MIN_USABLE_FRACTION,
     bands: tuple[str, ...] = DEFAULT_BANDS,
 ) -> SceneSelection | None:

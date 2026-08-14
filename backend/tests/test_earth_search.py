@@ -8,6 +8,7 @@ from affine import Affine
 from rasterio.windows import Window
 
 from overwatch.imagery.earth_search import (
+    EarthSearchProvider,
     _check_coverage,
     _epsg_from_props,
     boa_dn_offset,
@@ -86,3 +87,29 @@ def test_scene_meta_carries_dn_offset() -> None:
     assert scene_meta_from_item(item).dn_offset == -1000
     item.properties["earthsearch:boa_offset_applied"] = True
     assert scene_meta_from_item(item).dn_offset == 0
+
+
+def test_unrestricted_search_omits_catalog_cloud_filter(monkeypatch) -> None:
+    captured: dict = {}
+
+    class FakeSearch:
+        def items(self):
+            return []
+
+    class FakeClient:
+        def search(self, **kwargs):
+            captured.update(kwargs)
+            return FakeSearch()
+
+    monkeypatch.setattr(
+        "overwatch.imagery.earth_search.Client.open", lambda *_args, **_kwargs: FakeClient()
+    )
+
+    EarthSearchProvider().search_scenes(
+        SimpleNamespace(__geo_interface__={}),
+        start=SimpleNamespace(isoformat=lambda: "2024-05-08"),
+        end=SimpleNamespace(isoformat=lambda: "2024-05-08"),
+        max_cloud_pct=100.0,
+    )
+
+    assert "query" not in captured

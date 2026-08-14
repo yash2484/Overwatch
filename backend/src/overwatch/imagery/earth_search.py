@@ -100,8 +100,12 @@ class EarthSearchProvider:
             collections=[COLLECTION],
             intersects=geometry.__geo_interface__,
             datetime=f"{start.isoformat()}/{end.isoformat()}",
-            query={"eo:cloud_cover": {"lt": max_cloud_pct}},
             max_items=64,
+            **(
+                {"query": {"eo:cloud_cover": {"lt": max_cloud_pct}}}
+                if max_cloud_pct < 100.0
+                else {}
+            ),
         )
         metas = [scene_meta_from_item(item) for item in search.items()]
         return sorted(metas, key=lambda m: m.captured_at)
