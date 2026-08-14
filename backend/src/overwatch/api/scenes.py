@@ -17,6 +17,7 @@ from sqlalchemy import select
 from overwatch.api.aois import SessionDep, require_aoi
 from overwatch.api.errors import ApiError
 from overwatch.config import settings
+from overwatch.db.jobs import latest_succeeded_job
 from overwatch.db.models import Scene
 from overwatch.imagery.models import SceneMeta
 from overwatch.imagery.render import render_rgb_png
@@ -85,11 +86,15 @@ def render_scene_png(scene: Scene, out_path: Path) -> Path:
 @router.get("/aois/{slug}/scenes")
 def list_scenes(slug: str, session: SessionDep) -> list[dict[str, Any]]:
     aoi = require_aoi(session, slug)
-    rows = list(
-        session.scalars(
-            select(Scene).where(Scene.aoi_slug == aoi.slug).order_by(Scene.captured_at, Scene.id)
-        )
-    )
+    active_job = latest_succeeded_job(session, aoi.id)
+    stmt = select(Scene).where(Scene.aoi_slug == aoi.slug)
+    if (
+        active_job is not None
+        and active_job.before_scene_id is not None
+        and active_job.after_scene_id is not None
+    ):
+        stmt = stmt.where(Scene.id.in_((active_job.before_scene_id, active_job.after_scene_id)))
+    rows = list(session.scalars(stmt.order_by(Scene.captured_at, Scene.id)))
     out: list[dict[str, Any]] = []
     for row in rows:
         west, south, east, north = to_shape(row.window_geom).bounds

@@ -12,8 +12,11 @@ from shapely.geometry import box
 
 from overwatch.api.main import app
 from overwatch.db.aois import upsert_aoi
+from overwatch.db.detections import replace_detections
 from overwatch.db.engine import session_scope
+from overwatch.db.jobs import create_job, mark_succeeded, set_scene
 from overwatch.db.scenes import upsert_scene
+from overwatch.detection.models import ChangeType, Detection
 from overwatch.imagery.models import SceneMeta
 
 client = TestClient(app)
@@ -55,6 +58,111 @@ def test_scenes_are_ordered_by_capture_date(clean_t3: None) -> None:
         "t6-before",
         "t6-after",
     ]
+
+
+def test_scenes_follow_active_detection_pair_when_history_exists(clean_t3: None) -> None:
+    with session_scope() as session:
+        aoi_id = upsert_aoi(
+            session, slug=SLUG, name="Scenes AOI", vertical="port", geometry=AOI_GEOM
+        )
+        scene_ids = []
+        for stac_id, day in (
+            ("t6-before", 10),
+            ("t6-active-after", 20),
+            ("t6-historical-later", 30),
+        ):
+            meta = SceneMeta(
+                stac_id=stac_id,
+                collection="sentinel-2-l2a",
+                captured_at=datetime(2024, 6, day, tzinfo=UTC),
+                cloud_pct=1.0,
+                epsg=32643,
+                assets={},
+            )
+            scene_ids.append(upsert_scene(session, meta, SLUG, AOI_GEOM, 1.0))
+        job = create_job(session, aoi_id, {})
+        set_scene(session, job.id, "before", scene_ids[0])
+        set_scene(session, job.id, "after", scene_ids[1])
+        replace_detections(
+            session,
+            aoi_id=aoi_id,
+            job_id=job.id,
+            before_scene_id=scene_ids[0],
+            after_scene_id=scene_ids[1],
+            detections=[
+                Detection(
+                    geometry=box(76.97, 8.36, 76.99, 8.38),
+                    epsg=4326,
+                    area_m2=20_000.0,
+                    change_type=ChangeType.CONSTRUCTION,
+                    magnitude=0.5,
+                    confidence=0.9,
+                    contributing_indices={"ssim_dissim": 0.5},
+                )
+            ],
+        )
+        mark_succeeded(session, job.id, 1)
+
+    rows = client.get(f"/aois/{SLUG}/scenes").json()
+    assert [row["stac_id"] for row in rows] == ["t6-before", "t6-active-after"]
+
+
+def test_scenes_follow_latest_successful_pair_when_it_has_zero_detections(
+    clean_t3: None,
+) -> None:
+    with session_scope() as session:
+        aoi_id = upsert_aoi(
+            session, slug=SLUG, name="Scenes AOI", vertical="port", geometry=AOI_GEOM
+        )
+        scene_ids = []
+        for stac_id, day in (
+            ("t6-old-before", 10),
+            ("t6-old-after", 20),
+            ("t6-current-before", 25),
+            ("t6-current-after", 30),
+        ):
+            meta = SceneMeta(
+                stac_id=stac_id,
+                collection="sentinel-2-l2a",
+                captured_at=datetime(2024, 6, day, tzinfo=UTC),
+                cloud_pct=1.0,
+                epsg=32643,
+                assets={},
+            )
+            scene_ids.append(upsert_scene(session, meta, SLUG, AOI_GEOM, 1.0))
+
+        old_job = create_job(session, aoi_id, {})
+        old_job.created_at = datetime(2024, 7, 1, tzinfo=UTC)
+        set_scene(session, old_job.id, "before", scene_ids[0])
+        set_scene(session, old_job.id, "after", scene_ids[1])
+        replace_detections(
+            session,
+            aoi_id=aoi_id,
+            job_id=old_job.id,
+            before_scene_id=scene_ids[0],
+            after_scene_id=scene_ids[1],
+            detections=[
+                Detection(
+                    geometry=box(76.97, 8.36, 76.99, 8.38),
+                    epsg=4326,
+                    area_m2=20_000.0,
+                    change_type=ChangeType.CONSTRUCTION,
+                    magnitude=0.5,
+                    confidence=0.9,
+                    contributing_indices={"ssim_dissim": 0.5},
+                )
+            ],
+        )
+        mark_succeeded(session, old_job.id, 1)
+
+        current_job = create_job(session, aoi_id, {})
+        current_job.created_at = datetime(2024, 7, 2, tzinfo=UTC)
+        set_scene(session, current_job.id, "before", scene_ids[2])
+        set_scene(session, current_job.id, "after", scene_ids[3])
+        mark_succeeded(session, current_job.id, 0)
+
+    rows = client.get(f"/aois/{SLUG}/scenes").json()
+    assert [row["stac_id"] for row in rows] == ["t6-current-before", "t6-current-after"]
 
 
 def test_unknown_aoi_returns_404(clean_t3: None) -> None:

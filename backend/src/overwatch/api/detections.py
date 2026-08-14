@@ -11,6 +11,7 @@ from shapely.geometry import Polygon, box, mapping
 from overwatch.api.aois import SessionDep, require_aoi
 from overwatch.api.errors import ApiError
 from overwatch.db.detections import query_detections
+from overwatch.db.jobs import latest_succeeded_job
 from overwatch.db.models import DetectionEvent
 
 router = APIRouter(tags=["detections"])
@@ -65,5 +66,21 @@ def list_detections(
 ) -> dict[str, Any]:
     aoi = require_aoi(session, slug)
     geom = _parse_intersects(intersects) if intersects else None
-    rows = query_detections(session, aoi.id, intersects=geom, since=since, change_type=change_type)
+    active_job = latest_succeeded_job(session, aoi.id)
+    active_pair = (
+        (active_job.before_scene_id, active_job.after_scene_id)
+        if active_job is not None
+        and active_job.before_scene_id is not None
+        and active_job.after_scene_id is not None
+        else None
+    )
+    rows = query_detections(
+        session,
+        aoi.id,
+        before_scene_id=active_pair[0] if active_pair else None,
+        after_scene_id=active_pair[1] if active_pair else None,
+        intersects=geom,
+        since=since,
+        change_type=change_type,
+    )
     return {"type": "FeatureCollection", "features": [_feature(row) for row in rows]}

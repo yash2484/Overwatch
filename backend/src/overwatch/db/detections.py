@@ -64,12 +64,18 @@ def query_detections(
     session: Session,
     aoi_id: int,
     *,
+    before_scene_id: int | None = None,
+    after_scene_id: int | None = None,
     intersects: Polygon | None = None,
     since: date | None = None,
     change_type: str | None = None,
 ) -> list[DetectionEvent]:
     """Events for an AOI; `since` filters on the after scene's capture date."""
     stmt = select(DetectionEvent).where(DetectionEvent.aoi_id == aoi_id)
+    if before_scene_id is not None:
+        stmt = stmt.where(DetectionEvent.before_scene_id == before_scene_id)
+    if after_scene_id is not None:
+        stmt = stmt.where(DetectionEvent.after_scene_id == after_scene_id)
     if intersects is not None:
         stmt = stmt.where(
             func.ST_Intersects(DetectionEvent.geom, from_shape(intersects, srid=4326))
