@@ -151,7 +151,22 @@ permanently until a reload happened to win.
 - ⚠ **Vitest needs `--pool=threads` on this Windows box.** The default forks pool times out at 60 s
   waiting for a worker; with threads the same suite runs in ~2 s.
 
-*Next:* Phase 6 is demo-ready. Remaining is integration, not build: **push `phase-6-frontend-arena` + open a compare URL for the user to merge** (direct push to main is denied by policy; user merges). Optional follow-ups if desired: split the 2 MB JS bundle (`manualChunks` for maplibre/deck), swap demo briefs for live LLM briefs once the Anthropic key funds. (~~tune the flood preset so porto-alegre lights up~~ — done 2026-08-03; it needed a job run, not tuning.)
+*Next:* Phase 6 is demo-ready. Remaining is integration, not build: **push `phase-6-frontend-arena` + open a compare URL for the user to merge** (direct push to main is denied by policy; user merges). Optional follow-ups if desired: split the 2 MB JS bundle (`manualChunks` for maplibre/deck). (~~tune the flood preset so porto-alegre lights up~~ — done 2026-08-03; it needed a job run, not tuning.)
+
+### Porto Alegre demo adoption + live brief (2026-08-14)
+
+The live Porto Alegre demo now uses the date-matched EMSN194 pair **2024-04-18 → 2024-05-08**:
+
+- Production job `2b63e224-3571-4ee2-b32e-691f299e3a3c` completed with **104 detections / 1,841.2 ha**.
+- The old `2024-04-18 → 2024-05-21` detection set was retired atomically; its briefs remain append-only history and are `stale`.
+- Eleven of the fourteen existing GDELT articles fall inside the new fusion window and were copied to after-scene `5392`; the three May 23–27 articles remain on the historical pair.
+- Brief `1601` was generated and validated with **Claude Sonnet 5**, attempt 2, with **77 detection evidence links + 11 article evidence links** and zero dangling links. The three first-attempt area violations are retained in the brief's audit history.
+- The scene and detection endpoints now derive the active pair from the latest succeeded job, so historical polygons cannot overlay newer imagery and a successful zero-detection run still controls the displayed pair. AOIs without a successful job retain the historical fallback.
+- Catalog cloud metadata now ranks candidates without vetoing them before the AOI-level SCL gate; unrestricted Earth Search calls omit the cloud predicate, including the 100% boundary.
+- Verified live: both scene PNGs return 200; all API detections use `(17, 5392)`; frontend build succeeds; frontend tests pass **18/18** with `npm run test -- --pool=forks --no-file-parallelism`; backend tests pass **340 passed, 1 xfailed**; Ruff lint and format checks pass.
+- Known non-blocking warning: the frontend production JS bundle is **2,063 kB / 582 kB gzip**. The default Windows Vitest worker mode can time out; sequential file execution is the verified command.
+
+**Built & verified (2026-08-14):** live PostGIS/API checks above; `docker compose exec -T api pytest -q`; `docker compose exec -T api ruff check src tests`; `docker compose exec -T api ruff format --check src tests`; `npm run build`; and sequential frontend Vitest command above.
 
 ---
 
