@@ -151,8 +151,6 @@ permanently until a reload happened to win.
 - ⚠ **Vitest needs `--pool=threads` on this Windows box.** The default forks pool times out at 60 s
   waiting for a worker; with threads the same suite runs in ~2 s.
 
-*Next:* Phase 6 is demo-ready. Remaining is integration, not build: **push `phase-6-frontend-arena` + open a compare URL for the user to merge** (direct push to main is denied by policy; user merges). Optional follow-ups if desired: split the 2 MB JS bundle (`manualChunks` for maplibre/deck). (~~tune the flood preset so porto-alegre lights up~~ — done 2026-08-03; it needed a job run, not tuning.)
-
 ### Porto Alegre demo adoption + live brief (2026-08-14)
 
 The live Porto Alegre demo now uses the date-matched EMSN194 pair **2024-04-18 → 2024-05-08**:
@@ -167,6 +165,37 @@ The live Porto Alegre demo now uses the date-matched EMSN194 pair **2024-04-18 �
 - Known non-blocking warning: the frontend production JS bundle is **2,063 kB / 582 kB gzip**. The default Windows Vitest worker mode can time out; sequential file execution is the verified command.
 
 **Built & verified (2026-08-14):** live PostGIS/API checks above; `docker compose exec -T api pytest -q`; `docker compose exec -T api ruff check src tests`; `docker compose exec -T api ruff format --check src tests`; `npm run build`; and sequential frontend Vitest command above.
+
+## Current queue (2026-08-15)
+
+This replaces the stale Phase 6 integration note above. Historical phase records remain below for
+audit context; this is the authoritative dependency-ordered queue.
+
+- [x] Recover the interrupted session from its exported transcript; review and fix active-pair,
+  historical-overlay, zero-detection, and 100%-cloud-boundary regressions.
+- [x] Verify the fixes (`340 passed, 1 xfailed`; Ruff clean; frontend 18/18 + production build),
+  create focused checkpoint commits, and move them to `fix/porto-alegre-active-pair`.
+- [x] Make typed branches and verified checkpoint commits the default in global/project instructions;
+  add the pull-request branch-name gate to CI.
+- [ ] **Await user approval to launch localhost.** Start only the minimum demo services, verify the
+  frontend, API proxy, active Porto Alegre pair, imagery, detections, and brief, then leave the live
+  state open for user review without starting unused worker/beat services.
+- [ ] **After the user approves the localhost state, update `README.md`.** Bring setup commands,
+  architecture, current demo data, verified accuracy claims, known limitations, and the branch/PR
+  workflow in line with the shipped project; verify every command and metric before committing.
+- [ ] Run the final diff/review/verification gate, then push `fix/porto-alegre-active-pair` and open a
+  PR. Push and PR creation require explicit user approval; the user performs the final merge.
+- [ ] Resume `phase-accuracy-benchmarks`: reconcile its duplicated selector/Compose edits with this
+  branch, then commit the EMSN194 adapter, runner, tests, evidence record, `PROGRESS.md`, and
+  `CONTEXT.md` updates through its own reviewed PR. The measured single-case flood result is
+  precision 0.586 / recall 0.605 / F1 0.595 / IoU 0.424; do not publish it from the uncommitted
+  worktree.
+- [ ] Complete a defensible forest accuracy baseline against valid independent ground truth before
+  changing or tuning the forest preset. The flood result does not generalize to forest.
+- [ ] Complete the remaining external Phase 5 live-GDELT gate from a genuinely different network;
+  the current-network block and retry constraints remain documented below.
+- [ ] Optional performance follow-up: split the 2.06 MB frontend bundle (`manualChunks` or route-level
+  loading) and retain the current behavior with measured build/runtime evidence.
 
 ---
 
