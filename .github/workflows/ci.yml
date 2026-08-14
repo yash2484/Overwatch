@@ -6,6 +6,19 @@ on:
   pull_request:
 
 jobs:
+  branch-policy:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate source branch name
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          if [[ ! "$BRANCH" =~ ^(feat|fix|refactor|perf|docs|test|chore|ci|build|revert)/[a-z0-9][a-z0-9._-]*$ && ! "$BRANCH" =~ ^phase-[0-9]+-[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "Invalid branch '$BRANCH'. Use <type>/<topic> or phase-<number>-<topic>."
+            exit 1
+          fi
+
   backend:
     runs-on: ubuntu-latest
     defaults:
