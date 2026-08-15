@@ -1,0 +1,65 @@
+{
+  "status": "candidate_not_adopted",
+  "benchmark": "Copernicus EMSN194 AOI01 P04 FLDEL02",
+  "detector_source_commit": "3bad15c018ee9072a41d687105ef72ab462e5a3e",
+  "aoi_bbox_crs84": [-51.3, -30.08, -51.18, -29.98],
+  "before": {
+    "stac_id": "S2A_22JDM_20240418_0_L2A",
+    "captured_at": "2024-04-18T13:30:54.407000+00:00",
+    "usable_fraction": 0.9999441804645581
+  },
+  "after": {
+    "stac_id": "S2A_22JDM_20240508_0_L2A",
+    "captured_at": "2024-05-08T13:30:53.463000+00:00",
+    "usable_fraction": 0.8843946410144891
+  },
+  "truth": {
+    "semantics": "Observed event flood extent; no permanent-water subtraction",
+    "source_url": "https://riskandrecovery.emergency.copernicus.eu/download/EMSN194/EMSN194_GeospatialData.zip/",
+    "archive_sha256": "7d61dc66b3440db52ae89a33b415ac2273078278792636a11a37873573db8877",
+    "archive_member": "GeospatialData/Geojson/P04/EMSN194_STD_AOI01_P04FLDEL02_FloodExtent_v01.geojson",
+    "feature_count": 922,
+    "repaired_ring_self_intersections": 73,
+    "repair_method": "shapely.make_valid",
+    "maximum_official_area_relative_error": 0.00079905,
+    "truth_area_ha_on_valid_pixels": 1774.55
+  },
+  "preset": {
+    "vertical": "flood",
+    "rules": [
+      {"map": "ndwi", "direction": "increase", "threshold": 0.2},
+      {"map": "ndwi_before", "direction": "decrease", "threshold": 0.05}
+    ],
+    "primary_map": "ndwi",
+    "min_area_m2": 10000.0
+  },
+  "result": {
+    "detections": 104,
+    "emitted_area_ha": 1841.2,
+    "valid_fraction": 0.8843450236496518,
+    "precision": 0.5858272270448109,
+    "recall": 0.605060437857485,
+    "f1": 0.5952885212454537,
+    "iou": 0.4237799222465613,
+    "tp": 107371,
+    "fp": 75910,
+    "fn": 70084,
+    "tn": 887326
+  },
+  "sensitivity": {
+    "truth_overlap_before_scl_water_pct": 1.238060353329013,
+    "f1_after_subtracting_before_scl_water": 0.5943453850208763,
+    "truth_overlap_before_ndwi_water_pct": 3.884928573441154,
+    "f1_after_subtracting_before_ndwi_water": 0.6063101610323252
+  },
+  "caveats": [
+    "Pixels invalid in either Sentinel-2 SCL plane are excluded from scoring.",
+    "CEMS used same-day Sentinel-2 plus radar to produce the analyst-reviewed flood extent, so the truth is authoritative but not fully independent of the evaluated optical acquisition.",
+    "This candidate has not replaced the current 2024-05-21 live demo pair."
+  ],
+  "verification": {
+    "benchmark_command": "docker compose run --rm --no-deps api python -m overwatch.eval.run_emsn194",
+    "backend_tests": "349 passed, 1 xfailed",
+    "ruff": "check clean; 133 files formatted"
+  }
+}
