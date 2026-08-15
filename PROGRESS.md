@@ -171,6 +171,17 @@ The live Porto Alegre demo now uses the date-matched EMSN194 pair **2024-04-18 â
 This replaces the stale Phase 6 integration note above. Historical phase records remain below for
 audit context; this is the authoritative dependency-ordered queue.
 
+### Branch state
+
+- Deleted locally and on GitHub after successful merge: `phase-5-osint-fusion` and
+  `phase-6-frontend-arena`.
+- Retained local-only branch: `phase-5-6-planning` at `73c8287`, which preserves the planning/spec
+  checkpoint and is not a GitHub branch.
+- Retained local-only branch: `fix/porto-alegre-active-pair` at `b83417f`, which preserves the
+  verified fix checkpoint and is not a GitHub branch.
+- Retained `phase-accuracy-benchmarks` because its worktree contains unfinished EMSN194 benchmark
+  implementation, tests, evidence, and documentation changes.
+
 - [x] Recover the interrupted session from its exported transcript; review and fix active-pair,
   historical-overlay, zero-detection, and 100%-cloud-boundary regressions.
 - [x] Verify the fixes (`340 passed, 1 xfailed`; Ruff clean; frontend 18/18 + production build),
