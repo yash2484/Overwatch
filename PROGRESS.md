@@ -177,9 +177,12 @@ audit context; this is the authoritative dependency-ordered queue.
   create focused checkpoint commits, and move them to `fix/porto-alegre-active-pair`.
 - [x] Make typed branches and verified checkpoint commits the default in global/project instructions;
   add the pull-request branch-name gate to CI.
-- [ ] **Await user approval to launch localhost.** Start only the minimum demo services, verify the
-  frontend, API proxy, active Porto Alegre pair, imagery, detections, and brief, then leave the live
-  state open for user review without starting unused worker/beat services.
+- [x] Launch and verify the minimum localhost stack: PostGIS, Redis, API, and host Vite only;
+  worker/beat and the Compose frontend remain stopped. Frontend, API proxy, and API docs return 200;
+  Porto Alegre serves scenes `17 -> 5392`, both images return 200, all 104 detections use that pair,
+  and brief `1601` is validated on the same pair. The browser is open at `http://localhost:5173/`.
+- [ ] **Await user approval of the localhost state.** Keep the verified stack open for visual review;
+  the README update below remains blocked until this approval.
 - [ ] **After the user approves the localhost state, update `README.md`.** Bring setup commands,
   architecture, current demo data, verified accuracy claims, known limitations, and the branch/PR
   workflow in line with the shipped project; verify every command and metric before committing.
