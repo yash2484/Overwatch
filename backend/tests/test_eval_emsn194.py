@@ -19,6 +19,7 @@ from overwatch.eval.run_emsn194 import (
     EXPECTED_ARCHIVE_SHA256,
     MIN_USABLE,
     _load_exact_window,
+    _sensitivity_scores,
     _score_detections,
     _verify_sha256,
 )
@@ -295,3 +296,27 @@ def test_scores_emitted_polygons_only_where_both_scenes_are_valid() -> None:
     assert evaluation.score.fp == 0
     assert evaluation.score.fn == 0
     assert evaluation.score.tn == 2
+
+
+def test_sensitivity_scores_use_the_dual_scl_valid_mask() -> None:
+    bands = {
+        "green": np.array([[1, 3], [1, 1]], dtype=np.float32),
+        "nir": np.array([[2, 1], [2, 1]], dtype=np.float32),
+    }
+    predicted = np.array([[True, True], [False, False]])
+    truth = np.array([[True, True], [True, False]])
+    valid = np.array([[True, False], [True, True]])
+    before_scl = np.array([[4, 6], [4, 4]], dtype=np.uint8)
+
+    sensitivity = _sensitivity_scores(predicted, truth, bands, before_scl, valid)
+
+    assert sensitivity.truth_overlap_before_ndwi_water_pct == 0.0
+    assert sensitivity.truth_overlap_before_scl_water_pct == 0.0
+    assert sensitivity.minus_before_ndwi_water.tp == 1
+    assert sensitivity.minus_before_ndwi_water.fp == 0
+    assert sensitivity.minus_before_ndwi_water.fn == 1
+    assert sensitivity.minus_before_ndwi_water.tn == 1
+    assert sensitivity.minus_before_scl_water.tp == 1
+    assert sensitivity.minus_before_scl_water.fp == 0
+    assert sensitivity.minus_before_scl_water.fn == 1
+    assert sensitivity.minus_before_scl_water.tn == 1

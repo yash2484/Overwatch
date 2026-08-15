@@ -60,6 +60,14 @@ class BenchmarkEvaluation:
     score: PixelScore
 
 
+@dataclass(frozen=True)
+class SensitivityEvaluation:
+    truth_overlap_before_ndwi_water_pct: float
+    minus_before_ndwi_water: PixelScore
+    truth_overlap_before_scl_water_pct: float
+    minus_before_scl_water: PixelScore
+
+
 def _load_exact_window(
     provider: EarthSearchProvider,
     aoi: AOI,
@@ -206,6 +214,30 @@ def _score_detections(
     )
 
 
+def _sensitivity_scores(
+    predicted: np.ndarray,
+    truth: np.ndarray,
+    before_bands: dict[str, np.ndarray],
+    before_scl: np.ndarray,
+    valid: np.ndarray,
+) -> SensitivityEvaluation:
+    """Score the two before-water sensitivity variants on the shared valid mask."""
+    before_ndwi_water = np.nan_to_num(ndwi(before_bands), nan=-1.0) > -0.05
+    before_scl_water = before_scl == 6
+    valid_truth = truth & valid
+    truth_pixels = int(np.count_nonzero(valid_truth))
+    return SensitivityEvaluation(
+        truth_overlap_before_ndwi_water_pct=(
+            100 * np.count_nonzero(valid_truth & before_ndwi_water) / truth_pixels
+        ),
+        minus_before_ndwi_water=score_masks(predicted, truth & ~before_ndwi_water, valid),
+        truth_overlap_before_scl_water_pct=(
+            100 * np.count_nonzero(valid_truth & before_scl_water) / truth_pixels
+        ),
+        minus_before_scl_water=score_masks(predicted, truth & ~before_scl_water, valid),
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, default=ARCHIVE)
@@ -241,10 +273,7 @@ def main() -> None:
 
     # P04 is already an event-flood layer. These two variants are sensitivity checks only,
     # included to show that residual overlap with before-scene water does not drive the score.
-    before_ndwi_water = np.nan_to_num(ndwi(before.bands), nan=-1.0) > -0.05
-    before_scl_water = before.scl == 6
-    minus_ndwi = score_masks(predicted, truth & ~before_ndwi_water, valid)
-    minus_scl = score_masks(predicted, truth & ~before_scl_water, valid)
+    sensitivity = _sensitivity_scores(predicted, truth, before.bands, before.scl, valid)
 
     output = args.output_dir
     output.mkdir(parents=True, exist_ok=True)
@@ -292,14 +321,10 @@ def main() -> None:
         "valid_fraction": float(np.count_nonzero(valid) / valid.size),
         "headline": _score_dict(headline),
         "sensitivity": {
-            "truth_overlap_before_ndwi_water_pct": (
-                100 * np.count_nonzero(valid_truth & before_ndwi_water) / truth_pixels
-            ),
-            "minus_before_ndwi_water": _score_dict(minus_ndwi),
-            "truth_overlap_before_scl_water_pct": (
-                100 * np.count_nonzero(valid_truth & before_scl_water) / truth_pixels
-            ),
-            "minus_before_scl_water": _score_dict(minus_scl),
+            "truth_overlap_before_ndwi_water_pct": sensitivity.truth_overlap_before_ndwi_water_pct,
+            "minus_before_ndwi_water": _score_dict(sensitivity.minus_before_ndwi_water),
+            "truth_overlap_before_scl_water_pct": sensitivity.truth_overlap_before_scl_water_pct,
+            "minus_before_scl_water": _score_dict(sensitivity.minus_before_scl_water),
         },
         "comparison_legend": {
             "green": "truth and prediction",
