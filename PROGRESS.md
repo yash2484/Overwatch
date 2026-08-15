@@ -181,11 +181,11 @@ audit context; this is the authoritative dependency-ordered queue.
   worker/beat and the Compose frontend remain stopped. Frontend, API proxy, and API docs return 200;
   Porto Alegre serves scenes `17 -> 5392`, both images return 200, all 104 detections use that pair,
   and brief `1601` is validated on the same pair. The browser is open at `http://localhost:5173/`.
-- [ ] **Await user approval of the localhost state.** Keep the verified stack open for visual review;
-  the README update below remains blocked until this approval.
-- [ ] **After the user approves the localhost state, update `README.md`.** Bring setup commands,
-  architecture, current demo data, verified accuracy claims, known limitations, and the branch/PR
-  workflow in line with the shipped project; verify every command and metric before committing.
+- [x] User approved the localhost state. The minimal stack was then stopped, Docker Desktop was shut
+  down, and `wsl --shutdown` confirmed no running WSL distributions or `vmmemWSL` process.
+- [x] After approval, update `README.md` with setup commands, architecture, current demo data,
+  verified accuracy claims, known limitations, and the branch/PR workflow. README links and required
+  commands/metrics were checked locally; the README review found no actionable issues.
 - [x] Run the final diff/review/verification gate and publish the verified checkpoint. The user
   explicitly directed a direct fast-forward push to `main`, superseding the planned PR for this
   batch; `origin/main` advanced through `e0d5375`, and GitHub Actions run `31835452108` passed its
