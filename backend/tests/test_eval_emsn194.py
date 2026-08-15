@@ -1,7 +1,7 @@
 """Strict decoding and rasterisation of EMSN194 P04 flood truth."""
 
 import json
-from datetime import date
+from datetime import date, datetime, timezone
 
 import numpy as np
 import pytest
@@ -9,6 +9,7 @@ from affine import Affine
 from pyproj import Transformer
 from shapely.geometry import Polygon
 
+from overwatch.aois import AOI
 from overwatch.detection.models import ChangeType, Detection
 from overwatch.eval.emsn194 import decode_flood_extent, flood_truth_mask
 from overwatch.eval.run_emsn194 import (
@@ -16,10 +17,51 @@ from overwatch.eval.run_emsn194 import (
     BEFORE_STAC_ID,
     BENCHMARK_BBOX,
     EXPECTED_ARCHIVE_SHA256,
+    MIN_USABLE,
+    _load_exact_window,
     _score_detections,
     _verify_sha256,
 )
-from overwatch.imagery.models import AOIWindow
+from overwatch.imagery.models import AOIWindow, SceneMeta
+
+
+class _ProviderStub:
+    def __init__(self, scenes: list[SceneMeta], window: AOIWindow) -> None:
+        self.scenes = scenes
+        self.window = window
+        self.search_calls: list[dict[str, object]] = []
+        self.read_calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def search_scenes(self, geometry, start, end, *, max_cloud_pct):
+        self.search_calls.append(
+            {
+                "geometry": geometry,
+                "start": start,
+                "end": end,
+                "max_cloud_pct": max_cloud_pct,
+            }
+        )
+        return self.scenes
+
+    def read_window(self, scene, geometry, bands):
+        self.read_calls.append((scene.stac_id, tuple(bands)))
+        return self.window
+
+
+def _scene(stac_id: str) -> SceneMeta:
+    return SceneMeta(
+        stac_id=stac_id,
+        collection="sentinel-2-l2a",
+        captured_at=datetime(2024, 5, 8, 13, 30, tzinfo=timezone.utc),
+        cloud_pct=100.0,
+        epsg=32622,
+        assets={},
+    )
+
+
+def _window(scl: np.ndarray) -> AOIWindow:
+    bands = {name: np.ones(scl.shape, dtype=np.uint16) for name in ("red", "green", "blue", "nir")}
+    return AOIWindow(bands=bands, scl=scl, transform=Affine(1, 0, 0, 0, -1, scl.shape[0]), epsg=32622)
 
 
 def _feature_collection(
@@ -152,6 +194,62 @@ def test_benchmark_identity_is_fixed_independently_of_the_demo_configuration() -
     assert len(EXPECTED_ARCHIVE_SHA256) == 64
 
 
+def test_load_exact_window_selects_pinned_scene_and_caps_catalog_cloud_filter() -> None:
+    aoi = AOI(
+        slug="benchmark",
+        name="benchmark",
+        vertical="flood",
+        bbox=BENCHMARK_BBOX,
+    )
+    expected = _scene(AFTER_STAC_ID)
+    provider = _ProviderStub(
+        scenes=[_scene("other-scene"), expected],
+        window=_window(np.full((2, 2), 4, dtype=np.uint8)),
+    )
+
+    scene, window, fraction = _load_exact_window(
+        provider,
+        aoi,
+        date(2024, 5, 8),
+        AFTER_STAC_ID,
+    )
+
+    assert scene == expected
+    assert window is provider.window
+    assert fraction == 1.0
+    assert provider.search_calls[0]["start"] == date(2024, 5, 8)
+    assert provider.search_calls[0]["end"] == date(2024, 5, 9)
+    assert provider.search_calls[0]["max_cloud_pct"] == 100.0
+    assert provider.read_calls == [(AFTER_STAC_ID, ("red", "green", "blue", "nir"))]
+
+
+def test_load_exact_window_rejects_below_minimum_usable_fraction() -> None:
+    aoi = AOI(slug="benchmark", name="benchmark", vertical="flood", bbox=BENCHMARK_BBOX)
+    provider = _ProviderStub(
+        scenes=[_scene(AFTER_STAC_ID)],
+        window=_window(np.full((2, 2), 9, dtype=np.uint8)),
+    )
+
+    with pytest.raises(RuntimeError, match=f"requires {MIN_USABLE:.0%}"):
+        _load_exact_window(provider, aoi, date(2024, 5, 8), AFTER_STAC_ID)
+
+    assert provider.read_calls == [(AFTER_STAC_ID, ("red", "green", "blue", "nir"))]
+
+
+@pytest.mark.parametrize("returned_id", ["wrong-scene", "another-scene"])
+def test_load_exact_window_rejects_missing_pinned_scene(returned_id: str) -> None:
+    aoi = AOI(slug="benchmark", name="benchmark", vertical="flood", bbox=BENCHMARK_BBOX)
+    provider = _ProviderStub(
+        scenes=[_scene(returned_id)],
+        window=_window(np.full((2, 2), 4, dtype=np.uint8)),
+    )
+
+    with pytest.raises(RuntimeError, match=AFTER_STAC_ID):
+        _load_exact_window(provider, aoi, date(2024, 5, 8), AFTER_STAC_ID)
+
+    assert provider.read_calls == []
+
+
 def test_archive_hash_must_match_before_scoring(tmp_path) -> None:
     archive = tmp_path / "truth.zip"
     archive.write_bytes(b"official bytes")
@@ -196,3 +294,4 @@ def test_scores_emitted_polygons_only_where_both_scenes_are_valid() -> None:
     assert evaluation.score.tp == 1
     assert evaluation.score.fp == 0
     assert evaluation.score.fn == 0
+    assert evaluation.score.tn == 2
