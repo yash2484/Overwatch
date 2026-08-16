@@ -215,6 +215,11 @@ audit context; this is the authoritative dependency-ordered queue.
   are not a general flood accuracy result. Verification commands:
   `docker compose run --rm --no-deps api pytest -q tests/test_eval_emsn194.py` and
   `docker compose run --rm --no-deps api python -m overwatch.eval.run_emsn194`.
+  Final branch gate: the complete backend suite passed **359 passed, 1 xfailed** with two existing
+  dependency/configuration warnings after starting only the worktree-local PostGIS test dependency;
+  `ruff check src tests` passed, `ruff format --check src tests` reported **128 files already
+  formatted**, and `git diff --check main...HEAD` passed. No API daemon, Redis, worker, or beat was
+  started for this gate.
 - [ ] Complete a defensible forest accuracy baseline against valid independent ground truth before
   changing or tuning the forest preset. The flood result does not generalize to forest.
 - [ ] Complete the remaining external Phase 5 live-GDELT gate from a genuinely different network;
