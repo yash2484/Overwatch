@@ -59,7 +59,13 @@
   ],
   "verification": {
     "benchmark_command": "docker compose run --rm --no-deps api python -m overwatch.eval.run_emsn194",
-    "backend_tests": "349 passed, 1 xfailed",
-    "ruff": "check clean; 133 files formatted"
+    "focused_tests_command": "docker compose run --rm --no-deps api pytest -q tests/test_eval_emsn194.py",
+    "focused_tests_result": "19 passed",
+    "backend_tests_command": "docker compose run --rm --no-deps api pytest -q",
+    "backend_tests_result": "359 passed, 1 xfailed, 2 warnings",
+    "ruff_check_command": "docker compose run --rm --no-deps api ruff check src tests",
+    "ruff_check_result": "All checks passed!",
+    "ruff_format_command": "docker compose run --rm --no-deps api ruff format --check src tests",
+    "ruff_format_result": "128 files already formatted"
   }
 }
