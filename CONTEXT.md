@@ -70,6 +70,40 @@ deepening therefore reads as new flooding.
 - Note the direction convention: `direction="decrease"` means `value <= -threshold`, so a "must be low"
   precondition is expressed as a decrease rule (see `rule_mask`).
 
+## A flood benchmark must match both footprint and observation date
+
+A disaster activation covering the same regional event is not automatically valid ground truth for
+the demo AOI. Copernicus EMSR720 covers the May 2024 Rio Grande do Sul floods, but none of its five
+mapped AOIs intersects Overwatch's Porto Alegre bbox. Its products also stop before the live
+2024-05-21 after-scene. Comparing either mismatch would score disagreement between observations,
+not detector accuracy.
+
+- Copernicus EMSN194 AOI01 intersects the exact Porto Alegre bbox and supplies P04 FLDEL02 observed
+  flood polygons for 2024-05-08. A valid evaluation therefore fixes the Sentinel-2 pair to
+  `S2A_22JDM_20240418_0_L2A` -> `S2A_22JDM_20240508_0_L2A`.
+- P04 FLDEL02 means observed event-flooded area, not total water extent. Only 1.24% of valid truth
+  overlaps the before-scene SCL water class; subtracting it changes F1 from 0.5953 to
+  0.5943. Preserve the published event mask for the headline and report permanent-water subtraction
+  only as sensitivity.
+- The official 335-entry archive has SHA-256
+  `7d61dc66b3440db52ae89a33b415ac2273078278792636a11a37873573db8877`. The archive hash, AOI id,
+  source date, CRS, extraction method, flood type, and feature areas are benchmark identity. Reject
+  mismatches before scoring.
+- The source contains ring self-intersections. `make_valid` is acceptable only when repair preserves
+  source-coordinate area, remains polygonal, and projected area agrees with the official field
+  within 0.2%.
+- Earth Search reports the 8 May tile as 72.34% cloudy while the Porto Alegre window is 88.44%
+  usable by SCL. Catalog cloud may rank candidates but cannot veto them before AOI-level inspection.
+- The verified run scored 104 emitted detections: precision 0.5858272270448109, recall
+  0.605060437857485, F1 0.5952885212454537, IoU 0.4237799222465613, TP 107371, FP 75910, FN 70084,
+  and TN 887326. It emitted 1,841.2 ha against 1,774.55 ha of truth on valid pixels; valid fraction
+  was 0.8843450236496518. Focused tests returned 19 passed, the benchmark exited 0, eight artifacts
+  passed structural review, and the tracked evidence matched the fresh summary semantically.
+- This is a single date-matched Porto Alegre flood case. Forest and broader flood claims require
+  independent multi-case baselines. Reproduce it with
+  `docker compose run --rm --no-deps api pytest -q tests/test_eval_emsn194.py` and
+  `docker compose run --rm --no-deps api python -m overwatch.eval.run_emsn194`.
+
 ## OSCD: read `cm.tif` and `imgs_*_rect`, never `cm.png` or `imgs_*`
 
 Two file-choice traps in the benchmark archives, both of which fail **silently** and produce a

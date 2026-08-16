@@ -175,12 +175,12 @@ audit context; this is the authoritative dependency-ordered queue.
 
 - Deleted locally and on GitHub after successful merge: `phase-5-osint-fusion` and
   `phase-6-frontend-arena`.
-- Retained local-only branch: `phase-5-6-planning` at `73c8287`, which preserves the planning/spec
-  checkpoint and is not a GitHub branch.
-- Retained local-only branch: `fix/porto-alegre-active-pair` at `b83417f`, which preserves the
-  verified fix checkpoint and is not a GitHub branch.
-- Retained `phase-accuracy-benchmarks` because its worktree contains unfinished EMSN194 benchmark
-  implementation, tests, evidence, and documentation changes.
+- The primary checkout is back on `main`; redundant merged branches `phase-5-6-planning` and
+  `fix/porto-alegre-active-pair` were deleted locally on 2026-08-15.
+- Active worktree: `C:\dev\Overwatch\.worktrees\phase-flood-accuracy-benchmark` on
+  `phase-flood-accuracy-benchmark`, based on current `main`.
+- The obsolete `phase-accuracy-benchmarks` worktree and branch were removed after their unique
+  EMSN194 changes were migrated to the active branch.
 
 - [x] Recover the interrupted session from its exported transcript; review and fix active-pair,
   historical-overlay, zero-detection, and 100%-cloud-boundary regressions.
@@ -201,11 +201,20 @@ audit context; this is the authoritative dependency-ordered queue.
   explicitly directed a direct fast-forward push to `main`, superseding the planned PR for this
   batch; `origin/main` advanced through `e0d5375`, and GitHub Actions run `31835452108` passed its
   backend and frontend jobs.
-- [ ] Resume `phase-accuracy-benchmarks`: reconcile its duplicated selector/Compose edits with this
-  branch, then commit the EMSN194 adapter, runner, tests, evidence record, `PROGRESS.md`, and
-  `CONTEXT.md` updates through its own reviewed PR. The measured single-case flood result is
-  precision 0.586 / recall 0.605 / F1 0.595 / IoU 0.424; do not publish it from the uncommitted
-  worktree.
+- [x] Verify the EMSN194 benchmark as a **single date-matched Porto Alegre flood case**. The shipped
+  flood preset ran unchanged on `S2A_22JDM_20240418_0_L2A` ->
+  `S2A_22JDM_20240508_0_L2A` against Copernicus EMSN194 AOI01 P04 FLDEL02. The official 335-entry
+  archive matched SHA-256
+  `7d61dc66b3440db52ae89a33b415ac2273078278792636a11a37873573db8877`.
+  Focused verification returned **19 passed**. The benchmark exited 0 and reproduced precision
+  **0.5858272270448109**, recall **0.605060437857485**, F1 **0.5952885212454537**, and IoU
+  **0.4237799222465613** from TP **107371**, FP **75910**, FN **70084**, and TN **887326**. It
+  emitted **104 detections / 1,841.2 ha** against **1,774.55 ha** of truth on valid pixels; valid
+  fraction was **0.8843450236496518**. Eight generated artifacts passed structural review, and the
+  tracked evidence matched the fresh summary semantically. These figures describe one case. They
+  are not a general flood accuracy result. Verification commands:
+  `docker compose run --rm --no-deps api pytest -q tests/test_eval_emsn194.py` and
+  `docker compose run --rm --no-deps api python -m overwatch.eval.run_emsn194`.
 - [ ] Complete a defensible forest accuracy baseline against valid independent ground truth before
   changing or tuning the forest preset. The flood result does not generalize to forest.
 - [ ] Complete the remaining external Phase 5 live-GDELT gate from a genuinely different network;
