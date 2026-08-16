@@ -34,6 +34,9 @@ data/
 # graphify knowledge graph outputs
 graphify-out/
 
+# Linked feature worktrees stay inside the project without entering Git or tool scans.
+.worktrees/
+
 # Session handover notes. Deliberately untracked: these exist so a fresh Claude Code session can
 # pick up mid-phase context, so they are working notes about the *state of a session*, not about
 # the project. Anything that outlives a session belongs in PROGRESS.md / CONTEXT.md instead.
