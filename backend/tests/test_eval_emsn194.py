@@ -1,7 +1,7 @@
 """Strict decoding and rasterisation of EMSN194 P04 flood truth."""
 
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import numpy as np
 import pytest
@@ -19,8 +19,8 @@ from overwatch.eval.run_emsn194 import (
     EXPECTED_ARCHIVE_SHA256,
     MIN_USABLE,
     _load_exact_window,
-    _sensitivity_scores,
     _score_detections,
+    _sensitivity_scores,
     _verify_sha256,
 )
 from overwatch.imagery.models import AOIWindow, SceneMeta
@@ -53,7 +53,7 @@ def _scene(stac_id: str) -> SceneMeta:
     return SceneMeta(
         stac_id=stac_id,
         collection="sentinel-2-l2a",
-        captured_at=datetime(2024, 5, 8, 13, 30, tzinfo=timezone.utc),
+        captured_at=datetime(2024, 5, 8, 13, 30, tzinfo=UTC),
         cloud_pct=100.0,
         epsg=32622,
         assets={},
@@ -62,7 +62,9 @@ def _scene(stac_id: str) -> SceneMeta:
 
 def _window(scl: np.ndarray) -> AOIWindow:
     bands = {name: np.ones(scl.shape, dtype=np.uint16) for name in ("red", "green", "blue", "nir")}
-    return AOIWindow(bands=bands, scl=scl, transform=Affine(1, 0, 0, 0, -1, scl.shape[0]), epsg=32622)
+    return AOIWindow(
+        bands=bands, scl=scl, transform=Affine(1, 0, 0, 0, -1, scl.shape[0]), epsg=32622
+    )
 
 
 def _feature_collection(
