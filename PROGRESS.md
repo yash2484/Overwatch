@@ -220,8 +220,32 @@ audit context; this is the authoritative dependency-ordered queue.
   `ruff check src tests` passed, `ruff format --check src tests` reported **128 files already
   formatted**, and `git diff --check main...HEAD` passed. No API daemon, Redis, worker, or beat was
   started for this gate.
-- [ ] Complete a defensible forest accuracy baseline against valid independent ground truth before
-  changing or tuning the forest preset. The flood result does not generalize to forest.
+- [x] Complete a defensible forest accuracy baseline against valid independent ground truth before
+  changing or tuning the forest preset. **Verified on `phase-forest-accuracy-benchmark` (2026-08-17):**
+  the official TerraBrasilis Amazon-biome annual-increment archive
+  `yearly_deforestation_biome_amazonia_v20260717.zip` passed ZIP CRC validation and matched SHA-256
+  `ffdf5e8f00cbc9f7f0ee9ed78ac2c7bbcc31c182c596205e353298b1cbf92fd4`. It contains one complete
+  SIRGAS 2000 Polygon Shapefile with **802,282** records and already includes **212,673** polygons
+  below 6.25 ha, so the separate small-polygon product is not needed. A strict CP1252-aware PRODES
+  adapter now validates archive components, CRS, schema, annual class identity, Amazon source,
+  Pará state, dates, positive area, UUID uniqueness, geometry validity, spatial intersection, and
+  detector-grid rasterisation. The archive-linked runner extracts into a fresh temporary directory
+  and scores only those components, so the recorded archive hash authenticates the truth actually
+  evaluated; focused verification is **25 passed**.
+  Five 0.1-degree Pará windows were selected from the 2024 truth distribution before detector
+  scoring (`novo-progresso`, `low-medium`, `medium`, `high`, `very-high`) and their exact 2023/2024
+  Sentinel-2 pairs were pinned only after full-coverage and AOI-level SCL checks. All accepted scenes
+  are at least **98.0864% usable**; Novo Progresso is 100% usable on both sides. The existing demo
+  after-scene predates some PRODES acquisition dates, so it is not reused for this benchmark.
+  The unchanged forest preset produced micro precision **0.2160882267542699**, recall
+  **0.38420807368286397**, F1 **0.27660620692263793**, and IoU **0.1605008721939973** from TP
+  **84,097**, FP **305,082**, FN **134,787**, and TN **5,605,183**. The primary failure is precision:
+  Novo Progresso emitted 540.95 ha against 14.28 ha of valid truth and scored precision **0.0110**.
+  This is a truth-stratified five-cell Pará baseline, not a statewide or Amazon-wide estimate.
+  The archive-only rerun exited 0 and matched the tracked generated summary exactly. Final gate:
+  **384 passed, 1 xfailed, 2 existing warnings**; Ruff check clean; **132 files formatted**; diff
+  check clean apart from normal Windows LF/CRLF notices. Evidence:
+  `benchmarks/results/prodes-amazon-2024-forest-five-window.json` and its linked generated summary.
 - [ ] Complete the remaining external Phase 5 live-GDELT gate from a genuinely different network;
   the current-network block and retry constraints remain documented below.
 - [ ] Optional performance follow-up: split the 2.06 MB frontend bundle (`manualChunks` or route-level

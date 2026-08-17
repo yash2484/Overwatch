@@ -136,6 +136,34 @@ truth mask — not by scoring `rule_mask`'s output directly.
 - `overwatch.eval` must never be imported by `overwatch.detection` — scoring code cannot be allowed
   to influence what is detected.
 
+## PRODES annual increments: `year` is identity; `image_date` is provenance
+
+The TerraBrasilis Amazon-biome annual-increment Shapefile is valid forest truth, but its temporal
+fields are not interchangeable. `year=2024` and `class_name=d2024` identify the PRODES annual
+increment class. `image_date` records the acquisition used to interpret an individual polygon; it
+is not a second year label and must not be filtered against an invented July cut-off.
+
+- The verified 2026-07-17 archive is
+  `yearly_deforestation_biome_amazonia_v20260717.zip`, SHA-256
+  `ffdf5e8f00cbc9f7f0ee9ed78ac2c7bbcc31c182c596205e353298b1cbf92fd4`. It contains one complete
+  SIRGAS 2000 (EPSG:4674) Polygon Shapefile with 802,282 rows.
+- DBF text is Windows-1252, not UTF-8. The real value `corte raso com vegetação` fails under
+  `pyshp`'s UTF-8 default, so the adapter pins `encoding="cp1252"`.
+- The main archive already contains 212,673 polygons below 6.25 ha (119,342 in Pará). Do not join
+  the separate small-polygon product without proving disjoint semantics; doing so risks
+  double-counting truth.
+- Identity is fail-closed on `main_class=DESMATAMENTO`, `class_name=d<year>`, matching numeric
+  `year`, `source=Amazonia`, `state=PA`, positive area, UUID, SIRGAS 2000 CRS, and polygonal valid
+  geometry. The reprocessed archive contains isolated malformed/out-of-scope records, so broad
+  trust in every row is unsafe.
+- A benchmark pair must bracket every selected polygon's `image_date`. The existing Novo Progresso
+  demo after-scene (2024-07-24) predates truth acquired on 2024-07-29 and 2024-08-03, so the forest
+  benchmark pins a different pair rather than reusing the demo pair.
+- Verified five-window baseline, unchanged forest preset: precision 0.2160882267542699, recall
+  0.38420807368286397, F1 0.27660620692263793, IoU 0.1605008721939973. This is a truth-stratified,
+  five-cell Pará baseline, not a statewide or Amazon-wide estimate. Full evidence lives in
+  `benchmarks/results/prodes-amazon-2024-forest-five-window.json`.
+
 ## Gate 3 sums the linked detections — one claim, one quantity
 
 The numeric validator compares a quoted area against the **sum of every detection linked to that
