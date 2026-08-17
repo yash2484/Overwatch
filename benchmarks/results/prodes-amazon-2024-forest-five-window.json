@@ -1,0 +1,230 @@
+{
+  "status": "verified_baseline",
+  "benchmark": "INPE TerraBrasilis PRODES Amazon annual increments",
+  "detector_source_commit": "1aa056f3ce94abe4ed992097ee6742cdcd2fa760",
+  "generated_summary_artifact": "benchmarks/results/prodes-amazon-2024-forest-five-window-summary.json",
+  "measurement_source": "The generated summary artifact is the runner output copied unchanged after an archive-only rerun. This evidence record adds provenance, interpretation, caveats, and verification status.",
+  "sampling": {
+    "method": "Five fixed 0.1-degree Para cells selected from the 2024 PRODES truth distribution before detector scoring: showcase anchor plus low-medium, medium, high, and very-high clearing density.",
+    "windows": 5,
+    "truth_year": 2024,
+    "state": "PA",
+    "selection_leakage_guard": "Window bounds and Sentinel-2 scene IDs were fixed before any detector metric was observed."
+  },
+  "truth": {
+    "product": "Yearly deforestation increments - Shapefile (since 2008), Amazon biome",
+    "local_archive_name": "yearly_deforestation_biome_amazonia_v20260717.zip",
+    "archive_sha256": "ffdf5e8f00cbc9f7f0ee9ed78ac2c7bbcc31c182c596205e353298b1cbf92fd4",
+    "archive_size_bytes": 433388420,
+    "archive_uncompressed_bytes": 1661945641,
+    "archive_crc": "pass",
+    "last_updated": "2026-07-17",
+    "crs": "SIRGAS 2000 (EPSG:4674)",
+    "geometry_type": "Polygon",
+    "records": 802282,
+    "small_polygon_check": {
+      "archive_polygons_under_6_25_ha": 212673,
+      "para_polygons_under_6_25_ha": 119342,
+      "separate_small_polygon_product_used": false
+    },
+    "identity_filters": {
+      "main_class": "DESMATAMENTO",
+      "class_name": "d2024",
+      "year": 2024,
+      "source": "Amazonia",
+      "state": "PA"
+    },
+    "encoding": "Windows-1252",
+    "semantics": "Official annual PRODES deforestation increment polygons. image_date is retained as source-acquisition provenance and every selected acquisition is required to fall inside its pinned Sentinel-2 interval."
+  },
+  "preset": {
+    "vertical": "forest",
+    "rules": [
+      {
+        "map": "ndvi",
+        "direction": "decrease",
+        "threshold": 0.15
+      },
+      {
+        "map": "ndvi_before",
+        "direction": "increase",
+        "threshold": 0.5
+      }
+    ],
+    "primary_map": "ndvi",
+    "min_area_m2": 3000.0,
+    "tuned_against_benchmark": false
+  },
+  "windows": [
+    {
+      "slug": "novo-progresso",
+      "bbox_crs84": [-55.5, -7.2, -55.4, -7.1],
+      "truth_features": 6,
+      "truth_acquisition_dates": ["2024-07-29", "2024-08-03"],
+      "truth_area_ha_on_valid_pixels": 14.28,
+      "before": {
+        "stac_id": "S2A_21MXN_20230804_0_L2A",
+        "usable_fraction": 1.0
+      },
+      "after": {
+        "stac_id": "S2B_21MXN_20240803_0_L2A",
+        "usable_fraction": 1.0
+      },
+      "detections": 121,
+      "emitted_area_ha": 540.95,
+      "result": {
+        "precision": 0.011036140123856179,
+        "recall": 0.4180672268907563,
+        "f1": 0.021504601696594204,
+        "iou": 0.010869169427957615,
+        "tp": 597,
+        "fp": 53498,
+        "fn": 831,
+        "tn": 1176064
+      }
+    },
+    {
+      "slug": "low-medium",
+      "bbox_crs84": [-56.0, -3.7, -55.9, -3.6],
+      "truth_features": 3,
+      "truth_acquisition_dates": ["2024-08-06"],
+      "truth_area_ha_on_valid_pixels": 23.4,
+      "before": {
+        "stac_id": "S2A_21MXS_20230827_0_L2A",
+        "usable_fraction": 0.980864479842751
+      },
+      "after": {
+        "stac_id": "S2B_21MXS_20240826_0_L2A",
+        "usable_fraction": 1.0
+      },
+      "detections": 62,
+      "emitted_area_ha": 56.35,
+      "result": {
+        "precision": 0.28660159716060336,
+        "recall": 0.6901709401709402,
+        "f1": 0.4050156739811912,
+        "iou": 0.2539308176100629,
+        "tp": 1615,
+        "fp": 4020,
+        "fn": 725,
+        "tn": 1203246
+      }
+    },
+    {
+      "slug": "medium",
+      "bbox_crs84": [-54.2, -2.5, -54.1, -2.4],
+      "truth_features": 11,
+      "truth_acquisition_dates": ["2024-07-14"],
+      "truth_area_ha_on_valid_pixels": 77.46,
+      "before": {
+        "stac_id": "S2A_21MZT_20230725_0_L2A",
+        "usable_fraction": 0.9999967738553236
+      },
+      "after": {
+        "stac_id": "S2B_21MZT_20240714_0_L2A",
+        "usable_fraction": 1.0
+      },
+      "detections": 172,
+      "emitted_area_ha": 524.1,
+      "result": {
+        "precision": 0.07710360618202633,
+        "recall": 0.5216886134779241,
+        "f1": 0.1343506882106523,
+        "iou": 0.07201283079390537,
+        "tp": 4041,
+        "fp": 48369,
+        "fn": 3705,
+        "tn": 1183751
+      }
+    },
+    {
+      "slug": "high",
+      "bbox_crs84": [-55.8, -6.2, -55.7, -6.1],
+      "truth_features": 9,
+      "truth_acquisition_dates": ["2024-08-21"],
+      "truth_area_ha_on_valid_pixels": 155.42,
+      "before": {
+        "stac_id": "S2B_21MXP_20230819_0_L2A",
+        "usable_fraction": 1.0
+      },
+      "after": {
+        "stac_id": "S2A_21MXP_20240821_0_L2A",
+        "usable_fraction": 0.9864986718007458
+      },
+      "detections": 114,
+      "emitted_area_ha": 494.62,
+      "result": {
+        "precision": 0.21166848860277744,
+        "recall": 0.6727576888431347,
+        "f1": 0.32202032645518935,
+        "iou": 0.19190955142794214,
+        "tp": 10456,
+        "fp": 38942,
+        "fn": 5086,
+        "tn": 1159886
+      }
+    },
+    {
+      "slug": "very-high",
+      "bbox_crs84": [-54.8, -8.6, -54.7, -8.5],
+      "truth_features": 25,
+      "truth_acquisition_dates": ["2024-08-03"],
+      "truth_area_ha_on_valid_pixels": 1918.28,
+      "before": {
+        "stac_id": "S2A_21LYL_20230804_0_L2A",
+        "usable_fraction": 1.0
+      },
+      "after": {
+        "stac_id": "S2B_21LYL_20240803_0_L2A",
+        "usable_fraction": 1.0
+      },
+      "detections": 272,
+      "emitted_area_ha": 2276.41,
+      "result": {
+        "precision": 0.29602751701143465,
+        "recall": 0.3512938674228997,
+        "f1": 0.3213014549346912,
+        "iou": 0.19139913826647845,
+        "tp": 67388,
+        "fp": 160253,
+        "fn": 124440,
+        "tn": 882236
+      }
+    }
+  ],
+  "micro_average": {
+    "precision": 0.2160882267542699,
+    "recall": 0.38420807368286397,
+    "f1": 0.27660620692263793,
+    "iou": 0.1605008721939973,
+    "tp": 84097,
+    "fp": 305082,
+    "fn": 134787,
+    "tn": 5605183
+  },
+  "interpretation": {
+    "primary_limitation": "Precision is low overall: emitted forest-change polygons cover substantially more area than PRODES truth in four of five windows.",
+    "showcase_failure": "Novo Progresso precision is 0.011 because 540.95 ha was emitted against 14.28 ha of valid PRODES truth.",
+    "dense_window_failure": "The very-high clearing window is recall-limited at 0.351 despite better precision of 0.296.",
+    "claim_scope": "Accuracy of the unchanged shipped classical forest preset on five fixed Para PRODES 2024 windows; not a statewide, Amazon-wide, or general forest-monitoring estimate."
+  },
+  "caveats": [
+    "The five windows are truth-stratified and fixed before scoring, but they are not a random or statistically representative sample of Para or the Amazon biome.",
+    "PRODES year identifies the annual increment class; image_date is source-acquisition provenance. Every selected image_date is bracketed by its Sentinel-2 pair, but the pair can include changes outside the exact PRODES interpretation date.",
+    "PRODES uses analyst interpretation from multiple satellite sensors and is authoritative ground truth, but it is not independent of optical satellite imagery as a modality.",
+    "Pixels invalid in either Sentinel-2 SCL plane are excluded from scoring.",
+    "The emitted polygons are rasterised and scored after morphology and the 3,000 m2 minimum-area floor.",
+    "The 2026 reprocessed archive contains isolated anomalous records outside this benchmark's year/state/source/window filters; fail-closed identity and spatial checks exclude them.",
+    "No forest threshold or production detector behavior was changed based on this benchmark."
+  ],
+  "verification": {
+    "benchmark_command": "docker compose run --rm --no-deps -v <official-archive>:/truth.zip:ro api python -m overwatch.eval.run_prodes --archive /truth.zip",
+    "benchmark_result": "exit 0; five windows scored; generated summary pooled counts matched the reported micro-average",
+    "focused_tests_command": "docker compose run --rm --no-deps api pytest -q tests/test_eval_prodes.py tests/test_eval_run_prodes.py",
+    "focused_tests_result": "25 passed",
+    "focused_ruff_result": "All checks passed; 4 files already formatted",
+    "backend_tests_result": "384 passed, 1 xfailed, 2 warnings",
+    "backend_ruff_result": "All checks passed; 132 files already formatted",
+    "review_result": "Initial review found archive/Shapefile identity disconnect and stale evidence state. The runner now extracts and scores only the verified archive in a fresh temporary directory, an archive-linkage regression test passes, the archive-only rerun matched tracked evidence exactly, and project records were reconciled."
+  }
+}
