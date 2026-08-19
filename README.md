@@ -6,7 +6,7 @@ The current demo is a read-only console over three seeded AOIs:
 
 - Porto Alegre, flood
 - Vizhinjam, port construction
-- Novo Progresso, forest loss
+- Novo Progresso, forest-loss research extension
 
 ## Current Demo
 
@@ -18,7 +18,11 @@ The primary demo state is Porto Alegre, using the date-matched Sentinel-2 pair f
 - 11 date-valid news articles in the fusion window
 - Every displayed detection and brief uses scene pair `17 -> 5392`
 
-The Porto Alegre flood result has a single-case EMSN194 benchmark: precision **0.586**, recall **0.605**, F1 **0.595**, and IoU **0.424**. These numbers describe this date-matched flood case only. They do not generalize to the forest or port presets.
+The Porto Alegre flood result has a single-case EMSN194 benchmark: precision **0.586**, recall **0.605**, F1 **0.595**, and IoU **0.424**. These numbers describe this date-matched flood case only.
+
+The port construction workflow has an independent held-out OSCD benchmark over 10 urban-change scenes: precision **0.345**, recall **0.526**, F1 **0.417**, and IoU **0.263**. The shipped SSIM threshold `0.55` maximizes F1 on that split. Recall and F1 are the useful headline measures. Precision is lower because generic structural change also responds to non-target roads, roofs, bare soil, shadows, seasonal appearance, and other urban restructuring. This is a specificity limitation rather than a cloud-quality claim.
+
+Forest loss is not presented as a reliable production capability. The PRODES result remains a reproducible internal baseline while a final held-out spatial test determines whether forest belongs in the demonstrated product. Port and flood metrics do not generalize to forest.
 
 ## Architecture
 
@@ -111,7 +115,7 @@ The verified baseline is **340 backend tests passed, 1 documented xfail, and 18 
 ## Known Limitations
 
 - The flood benchmark is one date-matched Porto Alegre case, not a broad accuracy claim.
-- Forest accuracy still needs independent, valid ground truth before further threshold tuning.
+- Forest accuracy remains unresolved. The final forest phase is a held-out spatial transferability test. If two-date optical evidence cannot reliably separate permanent clearing from harvest and seasonal vegetation change, forest will remain a future extension rather than a headline demo claim.
 - GDELT fusion's remaining live gate requires a genuinely different network because the current IP has a long-lived rate-limit block.
 - The frontend production bundle is approximately 2.06 MB, or 582 kB gzip. Code splitting is tracked as an optional follow-up.
 - Real brief generation requires a funded Anthropic account and `OVERWATCH_ANTHROPIC_API_KEY`. The seeded demo data is read-only and data-grounded.

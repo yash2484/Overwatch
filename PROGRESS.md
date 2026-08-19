@@ -25,6 +25,7 @@ faint 4.61:1 on panel); `prefers-reduced-motion` block present.
 *Upgrades folded in (user-approved):* vector graphite basemap; clip-path swipe; evidence leader-line; ⌘K palette; React 19.
 
 *Key engineering facts for resume:*
+- **Accuracy narrative to reuse:** port construction is the strongest independently benchmarked workflow. The held-out OSCD test split scored precision **0.345**, recall **0.526**, F1 **0.417**, and IoU **0.263** over 10 scenes. Lead with recall and F1; explain precision as the specificity limit of generic SSIM structural change, not a cloud failure. The shipped `0.55` SSIM threshold is the held-out F1 maximum. Flood has separate single-case EMSN194 evidence: precision **0.586**, recall **0.605**, F1 **0.595**, and IoU **0.424**. Forest is the only unresolved vertical and must not appear as a current production accuracy claim. Canonical wording: `CONTEXT.md` § "Reusable accuracy and interview narrative."
 - **maplibre-gl pinned to v5** — deck.gl 9.3 `MapboxOverlay` crashes on v6's refactored camera internals (`_nearZ`).
 - **Frontend dev runs on the HOST** (`cd frontend && npm run dev`, localhost:5173). The compose `frontend` service bakes source with no bind-mount and shadows the port — **`docker compose stop frontend`** before host dev. Vite proxies `/api` → localhost:8000.
 - Backend render robustness: `_scene_meta` backfills pre-Phase-6 rows (porto-alegre) + derives UTM epsg from the MGRS tile; console renders at fixed_max=3000, gamma=0.75.
@@ -166,7 +167,7 @@ The live Porto Alegre demo now uses the date-matched EMSN194 pair **2024-04-18 �
 
 **Built & verified (2026-08-14):** live PostGIS/API checks above; `docker compose exec -T api pytest -q`; `docker compose exec -T api ruff check src tests`; `docker compose exec -T api ruff format --check src tests`; `npm run build`; and sequential frontend Vitest command above.
 
-## Current queue (2026-08-15)
+## Current queue (2026-08-18)
 
 This replaces the stale Phase 6 integration note above. Historical phase records remain below for
 audit context; this is the authoritative dependency-ordered queue.
@@ -177,10 +178,17 @@ audit context; this is the authoritative dependency-ordered queue.
   `phase-6-frontend-arena`.
 - The primary checkout is back on `main`; redundant merged branches `phase-5-6-planning` and
   `fix/porto-alegre-active-pair` were deleted locally on 2026-08-15.
-- Active worktree: `C:\dev\Overwatch\.worktrees\phase-flood-accuracy-benchmark` on
-  `phase-flood-accuracy-benchmark`, based on current `main`.
-- The obsolete `phase-accuracy-benchmarks` worktree and branch were removed after their unique
-  EMSN194 changes were migrated to the active branch.
+- Active worktree: `C:\dev\Overwatch\.worktrees\phase-forest-accuracy-benchmark` on
+  `phase-forest-accuracy-benchmark`, based on `main` at `1aa056f`. Forest benchmark implementation
+  commit: `e4ccea2`; verified-baseline documentation commit: `d3d3375`.
+- The worktree has unrelated pre-existing edits in
+  `backend/src/overwatch/detection/indices.py` and `backend/tests/test_indices.py`. Preserve them
+  exactly and do not include them in forest benchmark work.
+- **Environment convention (2026-08-19):** Docker Desktop and the WSL2 VM are started only when a
+  verification run needs them and are shut down cleanly the same session
+  (`docker compose -p <project> down` -> quit Docker Desktop -> `wsl --shutdown` -> confirm no
+  running distributions and no `vmmemWSL` process). Only the `postgis` compose service is needed
+  for the eval/test gates. Recorded in `CONTEXT.md` under "Docker/WSL2 requirement".
 
 - [x] Recover the interrupted session from its exported transcript; review and fix active-pair,
   historical-overlay, zero-detection, and 100%-cloud-boundary regressions.
@@ -246,6 +254,50 @@ audit context; this is the authoritative dependency-ordered queue.
   **384 passed, 1 xfailed, 2 existing warnings**; Ruff check clean; **132 files formatted**; diff
   check clean apart from normal Windows LF/CRLF notices. Evidence:
   `benchmarks/results/prodes-amazon-2024-forest-five-window.json` and its linked generated summary.
+- [x] Add an opt-in, baseline-preserving diagnostic path and reproduce the forest benchmark against
+  the verified local archive. `--diagnostics-dir` writes a separate `diagnostics.json`; the ordinary
+  `summary.json` schema and tracked baseline artifacts remain unchanged. The fresh run reproduced
+  micro precision **0.216**, recall **0.384**, F1 **0.277**, and IoU **0.161** exactly. At polygon
+  level, **545 / 741** emitted detections have zero valid-pixel overlap with PRODES truth:
+  Novo Progresso **119 / 121**, low-medium **59 / 62**, medium **163 / 172**, high **103 / 114**,
+  and very-high **101 / 272**. The very-high cell is materially different: **171 / 272** polygons
+  overlap truth, versus only **25 / 469** across the other four cells. This establishes a runnable
+  diagnostic loop and shows that low-truth-density overfire must be separated from dense-clearing
+  behavior before selecting a threshold or morphology change. Verification: **27 focused PRODES
+  tests passed**; complete backend suite **394 passed, 1 xfailed, 2 existing warnings**; Ruff lint
+  passed; the two changed Python files passed Ruff format; `git diff --check` passed with normal
+  Windows LF/CRLF notices. The repository-wide format check remains blocked only by the unrelated,
+  pre-existing `indices.py` and `test_indices.py` edits, which were not modified.
+- [x] Define one controlled forest candidate experiment from that evidence. Change one factor family
+  at a time (forest thresholds, valid/cloud handling, morphology, or `min_area_m2`); keep
+  SWIR/MNDWI/AWEI as a separate ingestion-and-detector hypothesis.
+- [x] Run the first single-factor forest threshold sweep as separate, temporary artifacts. Keeping
+  NDVI decrease at **0.15** and `min_area_m2` at **3,000 m²**, raising `ndvi_before` from the shipped
+  **0.50** to **0.60** produced precision **0.254**, recall **0.376**, F1 **0.303**, IoU **0.179**;
+  raising it to **0.65** produced precision **0.298**, recall **0.363**, F1 **0.327**, IoU **0.196**.
+  The `0.65` candidate is the current best measured point, but remains an experiment, not the
+  shipped default. Per-window F1 at `0.65`: Novo Progresso **0.033**, low-medium **0.394**, medium
+  **0.150**, high **0.442**, very-high **0.356**. The tradeoff is explicit: precision improves while
+  recall declines, so promotion requires a declared operating target and review of the full
+  per-window diagnostic artifact.
+- [x] Add predeclared-holdout support to the PRODES runner. `--windows <json>` reads a validated
+  window definition file (slug, bbox, truth_year, before/after STAC ids) and runs those cells
+  instead of the hardcoded five. Any non-default-windows run is treated as candidate-style: it
+  requires a separate `--output-dir` and `--detector-revision`, and the active windows are
+  serialized into the summary as the sampling frame. A shipped-preset holdout still asserts the
+  preset is unchanged. Baseline behavior is byte-identical (`BENCHMARK_WINDOWS` untouched).
+  TDD: 11 new focused tests, focused suite **44 passed**, complete backend suite
+  **405 passed, 1 xfailed, 2 existing warnings**, Ruff check clean.
+- [ ] Preserve the five-window baseline artifacts unchanged. Every candidate must write a separate
+  result pair and record detector commit, PRODES archive hash, scene ids, usable/valid fractions,
+  sampling frame, per-window metrics, and micro-averaged confusion counts.
+- [ ] Final feasibility gate: predeclare a 3-cell Pará holdout from PRODES truth (low/medium/high
+  density, no overlap with the five benchmark bboxes) before scoring, run the unchanged shipped
+  preset on it, optionally compare `ndvi_before >= 0.65` on the same cells, then make the binary
+  retain/drop product decision. See `HANDOVER-forest-final-chance.md`.
+- [ ] Accept a forest change only if a fresh five-window run improves the declared target metric
+  without hiding material per-window regressions. Run focused tests, the complete backend suite,
+  Ruff check/format, and `git diff --check` before recording or committing the result.
 - [ ] Complete the remaining external Phase 5 live-GDELT gate from a genuinely different network;
   the current-network block and retry constraints remain documented below.
 - [ ] Optional performance follow-up: split the 2.06 MB frontend bundle (`manualChunks` or route-level

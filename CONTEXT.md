@@ -2,6 +2,22 @@
 
 Maintained via the `domain-modeling` skill. Read this before touching imagery ingestion or the change detection engine — the facts below were each discovered the hard way (a real bug against real Sentinel-2 data), and any change in this area should treat them as constraints, not surprises.
 
+## Reusable accuracy and interview narrative
+
+Use this section for resume bullets, LinkedIn posts, portfolio case studies, and interview answers. Do not reconstruct these claims from session history.
+
+- **Port construction is the strongest independently benchmarked detector result.** The shipped SSIM-only `port` preset (`ssim_dissim >= 0.55`, `min_area_m2=5,000`) scored precision **0.345**, recall **0.526**, F1 **0.417**, and IoU **0.263** on the held-out OSCD test split of 10 Sentinel-2 urban-change scenes. The evaluation scored emitted polygons after morphology and the minimum-area floor.
+- **Lead with recall and F1, then state the precision limitation.** Recall **0.526** means the detector recovered about half of the labelled change pixels. F1 **0.417** captures the balanced operating point. Precision **0.345** reflects the specificity limit of a generic structural-change signal: SSIM can respond to roads, roofs, bare soil, shadows, seasonal appearance, and other urban restructuring outside the labelled target. This limitation comes from detector specificity, not unusable imagery.
+- **The shipped threshold is evidence-backed.** On the held-out test split, `0.55` produced the highest F1. Higher thresholds raised precision but reduced recall enough to lower F1. Quote the full tradeoff when discussing another threshold.
+- **Scope the claim correctly.** OSCD labels urban change, so these figures validate construction/port-style change detection rather than universal port-activity accuracy. The live Vizhinjam result is separate evidence: **16 detections** and **78.9 ha** after a terminal-centered spatial prior. It demonstrates the workflow but does not provide a held-out accuracy score.
+- **Flood has separate, narrower evidence.** The date-matched Porto Alegre EMSN194 case scored precision **0.586**, recall **0.605**, F1 **0.595**, and IoU **0.424**. These figures cover one event, footprint, and observation date.
+- **Forest is the only unresolved vertical.** The five-window PRODES baseline scored precision **0.216**, recall **0.384**, F1 **0.277**, and IoU **0.161**, with severe location dependence. Do not present that baseline or the temporary `ndvi_before` candidates as production accuracy. The remaining question is whether two-date red/green/blue/NIR imagery can separate permanent clearing from harvest, seasonal vegetation change, degraded canopy, haze, and shadow across held-out locations.
+- **Forest remains future work unless the final holdout transfers.** A production forest capability would need held-out spatial validation and may require multi-temporal evidence, seasonal normalization, and stronger spectral features such as SWIR-derived NBR/NDMI.
+
+### Short portfolio wording
+
+> Overwatch uses deterministic change detection over Sentinel-2 imagery. On the held-out OSCD urban-change test split, the construction preset reached **0.526 recall** and **0.417 F1**; precision was **0.345**, reflecting the specificity limits of a generic structural-change signal. A separate date-matched Porto Alegre flood case reached **0.605 recall** and **0.595 F1**. Forest-loss monitoring remains a research extension because two-date optical imagery does not yet distinguish permanent clearing from harvest and seasonal vegetation change across heterogeneous tropical scenes.
+
 ## Sentinel-2 BOA processing baseline offset
 
 Earth Search STAC items carry a raw digital-number (DN) encoding for Bottom-of-Atmosphere (BOA) reflectance that is **not consistent across processing baselines**. From baseline `04.00` onward, ESA's reprocessing adds a systematic `-1000` offset to the stored DNs unless Earth Search has already normalized it.
@@ -163,6 +179,14 @@ is not a second year label and must not be filtered against an invented July cut
   0.38420807368286397, F1 0.27660620692263793, IoU 0.1605008721939973. This is a truth-stratified,
   five-cell Pará baseline, not a statewide or Amazon-wide estimate. Full evidence lives in
   `benchmarks/results/prodes-amazon-2024-forest-five-window.json`.
+- Treat the tracked five-window result as immutable baseline evidence. A candidate experiment writes
+  a separate detailed result and generated summary; it must retain the detector commit, archive hash,
+  scene ids, usable and valid fractions, sampling frame, per-window scores, and pooled confusion
+  counts. Never overwrite the baseline while tuning.
+- Change one factor family per candidate so the result remains attributable. Forest thresholds,
+  validity/cloud handling, morphology, and `min_area_m2` can use the current red/green/blue/nir/SCL
+  inputs. SWIR/MNDWI/AWEI requires a separate hypothesis because it changes the imagery asset and
+  detector contracts.
 
 ## Gate 3 sums the linked detections — one claim, one quantity
 
@@ -240,6 +264,14 @@ Through Phase 2 the `worker` and `beat` services only ever ran `overwatch.ping`,
 ## Docker/WSL2 requirement
 
 GDAL/rasterio on native Windows is a known tarpit (PROJECT.md §2.3) — the dev environment lives entirely in containers. Don't debug import/build errors on the host; reproduce inside `docker compose` first.
+
+**Clean-shutdown convention (2026-08-19).** Start Docker Desktop and the WSL2 VM only when a
+verification run needs them, and shut them down cleanly in the same session. The eval/test gates
+need only the `postgis` compose service (`docker compose up -d postgis`); an API daemon, Redis,
+worker, and beat are not required. Clean shutdown sequence:
+`docker compose -p <project> down`, quit Docker Desktop (no `Docker Desktop` /
+`com.docker.backend` processes), then `wsl --shutdown`, then confirm `wsl --list --running` is
+empty and no `vmmemWSL` process remains. Leaving the VM up silently burns RAM and battery.
 
 ## Anthropic brief generator: Opus 4.8 API constraints + deferred credential validation
 

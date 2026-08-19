@@ -9,7 +9,7 @@
 
 ## 0. One-Paragraph Pitch
 
-A platform that watches the Earth for you. Users define areas of interest (AOIs) anywhere on the planet; Overwatch automatically pulls free Sentinel-2 satellite imagery on a schedule, detects meaningful change over time (construction, deforestation, flooding, port activity), stores detections as queryable geospatial events, and generates analyst-grade intelligence briefs where **every claim links to the exact pixels and dates that support it**. The demo: three AOIs across three verticals — a port, a forest, a flood zone — same engine, three different buyers, before/after sliders lighting up with detected change and an auto-written, evidence-linked brief beside each.
+A platform that watches the Earth for you. Users define areas of interest (AOIs) anywhere on the planet; Overwatch automatically pulls free Sentinel-2 satellite imagery on a schedule, detects meaningful change over time, stores detections as queryable geospatial events, and generates analyst-grade intelligence briefs where **every claim links to the exact pixels and dates that support it**. The current demonstrated verticals are port construction and flooding. Forest-loss monitoring remains a research extension because two-date optical imagery has not yet shown reliable cross-location separation of permanent clearing from harvest and seasonal vegetation change.
 
 ---
 
@@ -226,7 +226,7 @@ The `ChangeDetector` interface makes this a drop-in: train/fine-tune a change-se
 
 ## 11. Resume Bullet (draft — every number must be verified against reality before submission)
 
-> *"Built a geospatial change-detection platform (FastAPI, Celery, PostGIS, rasterio, React/MapLibre) that monitors user-defined areas of interest via Sentinel-2 imagery with automated cloud-masked classical change detection, storing detections as queryable geospatial events, correlating them with GDELT news through a deterministic three-gate filter, and generating evidence-linked intelligence briefs in which every claim traces to specific detections, scenes, dates, or cited articles — demonstrated across port-activity, deforestation, and flood AOIs."*
+> *"Built a geospatial change-detection platform (FastAPI, Celery, PostGIS, rasterio, React/MapLibre) that monitors user-defined areas of interest via Sentinel-2 imagery with automated cloud-masked classical change detection, stores detections as queryable geospatial events, correlates them with GDELT news through a deterministic three-gate filter, and generates evidence-linked intelligence briefs in which every claim traces to specific detections, scenes, dates, or cited articles — demonstrated on port-construction and flood-change workflows."*
 
 > **Why "geotagged GDELT news" was removed (2026-07-12):** it would be a false claim. GDELT's DOC 2.0 returns no
 > coordinates, and its geocoder is centroid-based by design — we measured a 25 km geofence rejecting 100% of our true
@@ -236,18 +236,33 @@ The `ChangeDetector` interface makes this a drop-in: train/fine-tune a change-se
 
 **Claims requiring empirical verification before going on paper** (AgentProof discipline):
 - ~~Any detection accuracy/precision figure — requires hand-labeled ground truth on the showcase AOIs.~~
-  **MEASURED 2026-08-04 for the construction preset**, against OSCD (§7's benchmark) rather than
-  hand-labelling: **precision 0.345, recall 0.526, F1 0.417, IoU 0.263** on the 10-scene held-out
-  test split, with the shipped preset untuned against the benchmark. Sayable on paper, with its
-  scope attached — two constraints on how it may be quoted, and the detail to have ready:
-  - **It covers the construction (`port`) preset only** — OSCD labels urban change. The `forest`
-    and `flood` presets remain unmeasured and no figure may be implied for them.
+  **MEASURED for the demonstrated construction and flood workflows, with different scope boundaries:**
+  construction against OSCD (2026-08-04) and flood against one date-matched EMSN194 case
+  (2026-08-15). These results are not interchangeable or evidence of one global detector accuracy
+  figure. Forest remains an unresolved research extension rather than a demonstrated production capability.
+- **Construction (`port`):** against OSCD (§7's benchmark), **precision 0.345, recall 0.526, F1
+  0.417, IoU 0.263** on the 10-scene held-out test split, with the shipped preset untuned against the
+  benchmark. Sayable on paper, with its scope attached:
+  - **It covers the construction (`port`) preset only** — OSCD labels urban change. No figure may
+    be implied for the forest or flood presets from this result.
   - Quote the **test** split. The train split is weaker (F1 0.272) because those scenes contain
     less change; omitting it would be cherry-picking, so report both or neither.
   - Supporting detail worth having ready for an interviewer: recall holds near 0.52 on both splits
     while precision follows the scene's change rate, and a threshold sweep puts the shipped 0.55 at
     the F1 maximum — a value set on Vizhinjam imagery before the dataset was downloaded. Evidence
     and per-scene tables in `PROGRESS.md`; harness in `overwatch.eval`.
+  - Lead with held-out recall **0.526** and F1 **0.417**. State precision **0.345** as the known
+    specificity limit of generic SSIM structural change: it also responds to non-target roads,
+    roofs, bare soil, shadows, seasonal appearance, and other urban restructuring. Do not frame
+    this as a cloud-quality failure.
+- **Flood:** one date-matched Porto Alegre case against Copernicus EMSN194 scored **precision
+  0.586, recall 0.605, F1 0.595, IoU 0.424**. This is evidence for that one event, footprint, and
+  observation date, not a general flood estimate.
+- **Forest:** retain the PRODES five-window result as internal negative evidence rather than a
+  production accuracy claim. The unchanged preset scored **precision 0.216, recall 0.384, F1 0.277,
+  IoU 0.161** and showed severe location dependence; Novo Progresso scored precision **0.0110**.
+  The final gate is a held-out spatial transferability test. If it fails, describe forest monitoring
+  as future work requiring multi-temporal, seasonal, and stronger spectral evidence.
 - Any latency/throughput number (e.g., "AOI-to-brief in under N minutes") — **still unmeasured.**
 - Scene/AOI counts — must reflect actually-processed volumes.
 
