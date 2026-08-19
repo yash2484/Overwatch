@@ -19,7 +19,7 @@ from shapely.geometry import box
 from overwatch.aois import AOI
 from overwatch.detection.detector import ClassicalChangeDetector
 from overwatch.detection.models import Detection
-from overwatch.detection.presets import VERTICAL_PRESETS
+from overwatch.detection.presets import VERTICAL_PRESETS, DetectionPreset
 from overwatch.eval.metrics import PixelScore, aggregate, score_masks
 from overwatch.eval.prodes import (
     ProdesFeature,
@@ -173,6 +173,49 @@ def _score_detections(
     )
 
 
+def _diagnose_detections(
+    detections: list[Detection],
+    *,
+    truth: np.ndarray,
+    valid: np.ndarray,
+    shape: tuple[int, int],
+    transform,
+) -> list[dict[str, object]]:
+    """Classify emitted polygons against PRODES truth without changing scoring."""
+    diagnostics: list[dict[str, object]] = []
+    for index, detection in enumerate(detections):
+        mask = mask_from_geometries(
+            [detection.geometry],
+            shape=shape,
+            transform=transform,
+        )
+        valid_pixels = int(np.count_nonzero(mask & valid))
+        truth_pixels = int(np.count_nonzero(mask & truth & valid))
+        if valid_pixels == 0:
+            classification = "no_valid_pixels"
+        elif truth_pixels == 0:
+            classification = "zero_truth_overlap"
+        elif truth_pixels == valid_pixels:
+            classification = "full_truth_overlap"
+        else:
+            classification = "partial_truth_overlap"
+        diagnostics.append(
+            {
+                "index": index,
+                "classification": classification,
+                "area_m2": detection.area_m2,
+                "valid_pixels": valid_pixels,
+                "truth_pixels": truth_pixels,
+                "intersection_pixels": truth_pixels,
+                "change_type": detection.change_type.value,
+                "magnitude": detection.magnitude,
+                "confidence": detection.confidence,
+                "contributing_indices": detection.contributing_indices,
+            }
+        )
+    return diagnostics
+
+
 def _verify_sha256(path: Path, *, expected: str = EXPECTED_ARCHIVE_SHA256) -> str:
     if not path.exists():
         raise FileNotFoundError(f"missing official PRODES archive: {path}")
@@ -199,6 +242,89 @@ def _score_dict(score: PixelScore) -> dict[str, int | float]:
     }
 
 
+def _write_diagnostics(output_dir: Path, windows: list[dict[str, object]]) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "diagnostics.json").write_text(
+        json.dumps({"windows": windows}, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _validate_candidate_output(*, output_dir: Path, candidate: bool) -> None:
+    if candidate and output_dir.resolve() == OUTPUT_DIR.resolve():
+        raise ValueError("candidate runs require a separate --output-dir")
+
+
+def _run_is_candidate(*, preset_modified: bool, holdout: bool) -> bool:
+    """A holdout run is candidate-style even with the shipped preset: its
+    artifacts must never overwrite the immutable five-window baseline."""
+    return preset_modified or holdout
+
+
+def _window_spec_dict(window: BenchmarkWindow) -> dict[str, object]:
+    return {
+        "slug": window.slug,
+        "bbox": list(window.bbox),
+        "truth_year": window.truth_year,
+        "before_stac_id": window.before_stac_id,
+        "after_stac_id": window.after_stac_id,
+    }
+
+
+def _load_windows(path: Path) -> list[BenchmarkWindow]:
+    """Read and validate a predeclared window definition file."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("windows file must be a non-empty JSON list")
+    required = {"slug", "bbox", "truth_year", "before_stac_id", "after_stac_id"}
+    windows: list[BenchmarkWindow] = []
+    for entry in payload:
+        if not isinstance(entry, dict):
+            raise ValueError(f"window entry must be an object, got {type(entry).__name__}")
+        missing = required - set(entry)
+        if missing:
+            raise ValueError(f"window entry missing required keys: {sorted(missing)}")
+        slug = entry["slug"]
+        bbox = entry["bbox"]
+        if (
+            not isinstance(bbox, list)
+            or len(bbox) != 4
+            or not all(isinstance(value, (int, float)) for value in bbox)
+        ):
+            raise ValueError(f"window {slug!r} bbox must be a list of four numbers")
+        if isinstance(entry["truth_year"], bool) or not isinstance(entry["truth_year"], int):
+            raise ValueError(f"window {slug!r} truth_year must be an integer")
+        for key in ("slug", "before_stac_id", "after_stac_id"):
+            if not isinstance(entry[key], str) or not entry[key]:
+                raise ValueError(f"window {slug!r} {key} must be a non-empty string")
+        windows.append(
+            BenchmarkWindow(
+                slug=slug,
+                bbox=tuple(bbox),
+                truth_year=entry["truth_year"],
+                before_stac_id=entry["before_stac_id"],
+                after_stac_id=entry["after_stac_id"],
+            )
+        )
+    return windows
+
+
+def _candidate_metadata(preset: DetectionPreset, *, detector_revision: str) -> dict[str, object]:
+    return {
+        "detector_revision": detector_revision,
+        "rules": [
+            {
+                "map": rule.map,
+                "direction": rule.direction,
+                "threshold": rule.threshold,
+            }
+            for rule in preset.rules
+        ],
+        "primary_map": preset.primary_map,
+        "min_area_m2": preset.min_area_m2,
+    }
+
+
 def _assert_unchanged_forest_preset() -> None:
     preset = VERTICAL_PRESETS["forest"]
     rules = {(rule.map, rule.direction, rule.threshold) for rule in preset.rules}
@@ -212,19 +338,70 @@ def _assert_unchanged_forest_preset() -> None:
         )
 
 
+def _forest_preset(
+    *,
+    ndvi_decrease: float | None = None,
+    ndvi_before_floor: float | None = None,
+    min_area_m2: float | None = None,
+) -> DetectionPreset:
+    preset = VERTICAL_PRESETS["forest"]
+    rules = [
+        rule.model_copy(
+            update={
+                "threshold": (
+                    ndvi_decrease
+                    if rule.map == "ndvi" and ndvi_decrease is not None
+                    else ndvi_before_floor
+                    if rule.map == "ndvi_before" and ndvi_before_floor is not None
+                    else rule.threshold
+                )
+            }
+        )
+        for rule in preset.rules
+    ]
+    return preset.model_copy(
+        update={
+            "rules": rules,
+            "min_area_m2": min_area_m2 if min_area_m2 is not None else preset.min_area_m2,
+        }
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, default=ARCHIVE)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
+    parser.add_argument("--diagnostics-dir", type=Path, default=None)
+    parser.add_argument("--windows", type=Path, default=None)
+    parser.add_argument("--ndvi-decrease", type=float, default=None)
+    parser.add_argument("--ndvi-before-floor", type=float, default=None)
+    parser.add_argument("--min-area-m2", type=float, default=None)
+    parser.add_argument("--detector-revision", type=str, default=None)
     args = parser.parse_args()
 
     archive_sha256 = _verify_sha256(args.archive)
-    _assert_unchanged_forest_preset()
+    preset_modified = any(
+        value is not None
+        for value in (args.ndvi_decrease, args.ndvi_before_floor, args.min_area_m2)
+    )
+    holdout = args.windows is not None
+    candidate = _run_is_candidate(preset_modified=preset_modified, holdout=holdout)
+    _validate_candidate_output(output_dir=args.output_dir, candidate=candidate)
+    if candidate and not args.detector_revision:
+        raise ValueError("candidate runs require --detector-revision")
+    if not preset_modified:
+        _assert_unchanged_forest_preset()
+    forest_preset = _forest_preset(
+        ndvi_decrease=args.ndvi_decrease,
+        ndvi_before_floor=args.ndvi_before_floor,
+        min_area_m2=args.min_area_m2,
+    )
+    active_windows = _load_windows(args.windows) if holdout else BENCHMARK_WINDOWS
     combined_bbox = (
-        min(window.bbox[0] for window in BENCHMARK_WINDOWS),
-        min(window.bbox[1] for window in BENCHMARK_WINDOWS),
-        max(window.bbox[2] for window in BENCHMARK_WINDOWS),
-        max(window.bbox[3] for window in BENCHMARK_WINDOWS),
+        min(window.bbox[0] for window in active_windows),
+        min(window.bbox[1] for window in active_windows),
+        max(window.bbox[2] for window in active_windows),
+        max(window.bbox[3] for window in active_windows),
     )
     with tempfile.TemporaryDirectory(prefix="prodes-verified-") as extracted_dir:
         shapefile_path = _extract_verified_archive(args.archive, Path(extracted_dir))
@@ -237,7 +414,8 @@ def main() -> None:
         provider = EarthSearchProvider()
         scores: list[PixelScore] = []
         summaries: list[dict[str, object]] = []
-        for specification in BENCHMARK_WINDOWS:
+        diagnostics: list[dict[str, object]] = []
+        for specification in active_windows:
             footprint = box(*specification.bbox)
             features = [
                 feature for feature in all_features if feature.geometry.intersects(footprint)
@@ -274,9 +452,22 @@ def main() -> None:
             detections = ClassicalChangeDetector().detect(
                 before,
                 after,
-                VERTICAL_PRESETS["forest"],
+                forest_preset,
             )
             evaluation = _score_detections(detections, before, after, truth)
+            if args.diagnostics_dir is not None:
+                diagnostics.append(
+                    {
+                        "slug": specification.slug,
+                        "detections": _diagnose_detections(
+                            detections,
+                            truth=truth,
+                            valid=evaluation.valid,
+                            shape=truth.shape,
+                            transform=before.transform,
+                        ),
+                    }
+                )
             scores.append(evaluation.score)
             valid_truth = truth & evaluation.valid
             pixel_area_m2 = abs(before.transform.a * before.transform.e)
@@ -324,11 +515,20 @@ def main() -> None:
         "windows": summaries,
         "micro_average": _score_dict(micro),
     }
+    if candidate:
+        summary["candidate"] = _candidate_metadata(
+            forest_preset,
+            detector_revision=args.detector_revision,
+        )
+    if holdout:
+        summary["windows"] = [_window_spec_dict(window) for window in active_windows]
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2),
         encoding="utf-8",
     )
+    if args.diagnostics_dir is not None:
+        _write_diagnostics(args.diagnostics_dir, diagnostics)
     print(
         f"MICRO over {len(scores)} windows: precision={micro.precision:.3f} "
         f"recall={micro.recall:.3f} F1={micro.f1:.3f} IoU={micro.iou:.3f}"
