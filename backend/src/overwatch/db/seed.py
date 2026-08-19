@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def seed() -> list[int]:
-    """Upsert the three showcase AOIs; returns their stable row ids (sorted by slug)."""
+    """Upsert the two showcase AOIs; returns their stable row ids (sorted by slug)."""
     with session_scope() as session:
         return [
             upsert_aoi(

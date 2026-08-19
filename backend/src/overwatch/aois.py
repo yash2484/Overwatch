@@ -1,4 +1,9 @@
-"""Hardcoded showcase AOIs (design spec §5). Seed boxes — refined during Phase 1 eyeballing."""
+"""Hardcoded showcase AOIs (design spec §5). Seed boxes — refined during Phase 1 eyeballing.
+
+Forest (novo-progresso) was removed from the showcase after the 2026-08-19 closure: it is a
+research extension, not a demonstrated capability, and the demo console serves only the
+demonstrated verticals (port, flood). The forest detector/fusion/brief code paths remain in the
+repo as extension work."""
 
 from pydantic import BaseModel
 from shapely.geometry import Polygon, box
@@ -24,9 +29,8 @@ class AOI(BaseModel):
 # The frontend takes `aois[0]` as its default selection and renders the nav in list order,
 # so this single sequence decides what a visitor sees first. Porto Alegre leads: the flood
 # is the most legible change to a viewer who has never read a satellite image — a city
-# turning to water needs no explanation, where a port build-out and a forest clearing both
-# reward a second look. Deforestation second, port last.
-DEMO_ORDER: tuple[str, ...] = ("porto-alegre", "novo-progresso", "vizhinjam")
+# turning to water needs no explanation, where a port build-out rewards a second look.
+DEMO_ORDER: tuple[str, ...] = ("porto-alegre", "vizhinjam")
 
 SHOWCASE_AOIS: dict[str, AOI] = {
     aoi.slug: aoi
@@ -39,18 +43,6 @@ SHOWCASE_AOIS: dict[str, AOI] = {
             # "Vizhinjam" is globally unambiguous and DOES appear in the real headlines.
             place_terms=["Vizhinjam"],
             region_terms=["Thiruvananthapuram", "Kerala"],
-        ),
-        AOI(
-            slug="novo-progresso",
-            name="Novo Progresso (BR-163), Para",
-            vertical="forest",
-            bbox=(-55.450, -7.150, -55.350, -7.050),
-            # Measured: ZERO of the four real articles name "Novo Progresso" in the title
-            # — every one says "Amazon". A strict title match scores 0/4 on our own demo
-            # corpus. The strict term still gates RETRIEVAL against full text, so an
-            # Amazon-but-not-Novo-Progresso story is never even retrieved.
-            place_terms=["Novo Progresso"],
-            region_terms=["Amazon", "Amazonia", "Amazônia", "Para", "Pará", "BR-163"],
         ),
         AOI(
             slug="porto-alegre",

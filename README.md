@@ -110,7 +110,7 @@ npm run build
 npm run test -- --pool=forks --no-file-parallelism
 ```
 
-The verified baseline is **340 backend tests passed, 1 documented xfail, and 18 frontend tests passed**. The xfail tracks the known limitation that flood precision on turbid water needs SWIR; the current ingestion set does not fetch SWIR bands.
+The verified baseline is **405 backend tests passed, 1 documented xfail, and 18 frontend tests passed**. The xfail tracks the known limitation that flood precision on turbid water needs SWIR; the current ingestion set does not fetch SWIR bands.
 
 ## Known Limitations
 

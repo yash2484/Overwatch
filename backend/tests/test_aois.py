@@ -16,9 +16,9 @@ def test_demo_opens_on_the_flood() -> None:
     assert SHOWCASE_AOIS[DEMO_ORDER[0]].vertical == "flood"
 
 
-def test_three_showcase_aois_present() -> None:
-    assert set(SHOWCASE_AOIS) == {"vizhinjam", "novo-progresso", "porto-alegre"}
-    assert {a.vertical for a in SHOWCASE_AOIS.values()} == {"port", "forest", "flood"}
+def test_two_showcase_aois_present() -> None:
+    assert set(SHOWCASE_AOIS) == {"vizhinjam", "porto-alegre"}
+    assert {a.vertical for a in SHOWCASE_AOIS.values()} == {"port", "flood"}
 
 
 def test_bboxes_are_ordered() -> None:

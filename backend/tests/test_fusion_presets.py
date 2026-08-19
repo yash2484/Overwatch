@@ -78,10 +78,6 @@ def test_a_tight_flood_pair_gets_a_tight_window() -> None:
 
 def test_showcase_aois_carry_toponym_terms() -> None:
     assert SHOWCASE_AOIS["vizhinjam"].place_terms == ["Vizhinjam"]
-    # design §2.5: ZERO of the four real Novo Progresso articles name the AOI in their
-    # title — they all say "Amazon". The corroboration list must carry what titles
-    # actually contain, or the gate scores 0/4 on our own demo corpus.
-    assert "Amazon" in SHOWCASE_AOIS["novo-progresso"].region_terms
     # "Porto Alegre" is ambiguous (there is one in Portugal); the real headlines say
     # "Rio Grande do Sul".
     assert "Rio Grande do Sul" in SHOWCASE_AOIS["porto-alegre"].region_terms
