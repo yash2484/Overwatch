@@ -288,17 +288,19 @@ audit context; this is the authoritative dependency-ordered queue.
   preset is unchanged. Baseline behavior is byte-identical (`BENCHMARK_WINDOWS` untouched).
   TDD: 11 new focused tests, focused suite **44 passed**, complete backend suite
   **405 passed, 1 xfailed, 2 existing warnings**, Ruff check clean.
-- [ ] Preserve the five-window baseline artifacts unchanged. Every candidate must write a separate
-  result pair and record detector commit, PRODES archive hash, scene ids, usable/valid fractions,
-  sampling frame, per-window metrics, and micro-averaged confusion counts.
+- [x] Preserve the five-window baseline artifacts unchanged (committed immutable at `d3d3375`);
+  the candidate-writing policy is now moot with forest retired.
 - [x] Final feasibility gate retired with the retain/drop decision (2026-08-19): forest is closed
   as a research extension, not a demonstrated capability. Rationale: the five-window baseline's
   failure is systematic (two-date optical NDVI cannot separate clearing from harvest/seasonal
   change), so a spatial holdout would not change the product decision. No holdout scoring was run.
   The `--windows` holdout runner stays as generic evaluation tooling for future detectors.
-- [ ] Accept a forest change only if a fresh five-window run improves the declared target metric
-  without hiding material per-window regressions. Run focused tests, the complete backend suite,
-  Ruff check/format, and `git diff --check` before recording or committing the result.
+- [x] Remove the forest demo AOI (novo-progresso) from the showcase (2026-08-19). The console now
+  serves port + flood only; `novo-progresso` is gone from `SHOWCASE_AOIS`/`DEMO_ORDER`, the
+  frontend drops forest/`vegetation_loss` demo labels, and the dev DB row was removed. Forest
+  detector/fusion/brief code stays in the repo as extension work.
+- [x] Forest-change acceptance criterion retired (2026-08-19): tuning forest back toward a
+  production claim is out of scope unless stronger (multi-temporal/SWIR) evidence arrives.
 - [ ] Complete the remaining external Phase 5 live-GDELT gate from a genuinely different network;
   the current-network block and retry constraints remain documented below.
 - [ ] Optional performance follow-up: split the 2.06 MB frontend bundle (`manualChunks` or route-level
