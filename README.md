@@ -2,11 +2,10 @@
 
 Overwatch is a geospatial change-detection console for monitoring areas of interest with Sentinel-2 imagery. It selects usable imagery, detects meaningful change with deterministic rules, joins detections with GDELT news, and produces evidence-linked intelligence briefs.
 
-The current demo is a read-only console over three seeded AOIs:
+The current demo is a read-only console over two seeded AOIs:
 
 - Porto Alegre, flood
 - Vizhinjam, port construction
-- Novo Progresso, forest-loss research extension
 
 ## Current Demo
 
@@ -17,6 +16,13 @@ The primary demo state is Porto Alegre, using the date-matched Sentinel-2 pair f
 - Validated Claude Sonnet 5 brief `1601`
 - 11 date-valid news articles in the fusion window
 - Every displayed detection and brief uses scene pair `17 -> 5392`
+
+The secondary demo state is Vizhinjam, using the Sentinel-2 pair from **2021-02-12 to 2025-02-11**.
+
+- 16 construction detections
+- 78.9 ha of emitted detection area
+- Validated Claude Sonnet 5 brief `1548`
+- Every displayed detection and brief uses scene pair `5 -> 11`
 
 The Porto Alegre flood result has a single-case EMSN194 benchmark: precision **0.586**, recall **0.605**, F1 **0.595**, and IoU **0.424**. These numbers describe this date-matched flood case only.
 

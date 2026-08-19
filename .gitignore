@@ -41,3 +41,7 @@ graphify-out/
 # pick up mid-phase context, so they are working notes about the *state of a session*, not about
 # the project. Anything that outlives a session belongs in PROGRESS.md / CONTEXT.md instead.
 HANDOVER-*.md
+
+# Session transcripts exported by the assistant. Working artifacts of a conversation — never
+# project content, never pushed.
+session-*.md

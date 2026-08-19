@@ -3,8 +3,8 @@
 > Living session-state file. Convention: nothing is "done" until it's in **Built & verified** with a note on *how* it was verified.
 
 ## Current phase
-**Phase 6 — Frontend arena: COMPLETE — all 9 tasks built + verified, demo-ready (2026-07-27). Branch
-`phase-6-frontend-arena` (off `phase-5-osint-fusion`), committed, NOT yet pushed / merged.**
+**Demo-ready (2026-08-19). All work merged to `main` at `686fa50` and pushed: forest closure docs, PRODES eval tooling, and the demo-without-forest showcase (two seeded AOIs — porto-alegre flood, vizhinjam port — each with validated briefs). Forest is closed as a research extension. The sole remaining external item is the Phase 5 live-GDELT gate (needs a funded Anthropic org plus a genuinely different network).**
+Historical Phase 6 gate (kept for the record):
 Executed `plans/2026-07-12-phase-6-frontend-arena.md` via `superpowers:executing-plans`, verifying each task live in
 the browser (Playwright screenshots). **Verification gate GREEN:** tsc clean; 14 frontend tests; 296 backend tests;
 `vite build` succeeds (582 KB gz); ruff check + format clean; **both evidence-join directions proven live**

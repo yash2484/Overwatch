@@ -31,7 +31,7 @@ Project #3 alongside **AgentProof** (AI eval/observability) and **Risk-Copilot**
 
 ## 2. Scope Decisions Already Made (do not re-litigate without cause)
 
-1. **Neutral multi-domain platform** — showcase via 3 AOI verticals, engine stays generic.
+1. **Neutral multi-domain platform** — showcase via 2 demonstrated AOI verticals (port, flood), forest kept as a research extension, engine stays generic.
 2. **Classical change detection for MVP** (band math + differencing + SSIM), **deep-learning segmentation as a planned extension**. Rationale: classical is fast to ship, fully explainable (each detection has a mathematical reason), and interview-defensible; DL without labeled data and evaluation rigor is a liability. The upgrade path is itself a good story ("I shipped explainable detection first, then benchmarked a learned model against it").
 3. **Docker/WSL2 from day zero.** GDAL/rasterio on native Windows is a known tarpit. The entire dev environment lives in containers; `C:\dev\` project root convention applies to the repo, execution happens in Docker.
 4. **Free data only for MVP.** Sentinel-2 (10m resolution, ~5-day revisit) via a free API (§4). No paid imagery. Cost ceiling for the whole project ≈ LLM API usage only.
@@ -196,7 +196,7 @@ The `ChangeDetector` interface makes this a drop-in: train/fine-tune a change-se
 - **Phase 4 — Briefs + evidence chain.** Brief generator with evidence-link enforcement + validator. Verify: generated brief for AOI #1; every claim's links resolve; validator demonstrably rejects an unlinked claim (test this negatively).
 - **Phase 5 — OSINT fusion (GDELT).** API spike first (verify DOC/GEO 2.0 surface and theme taxonomy against real queries); TDD the three-gate relevance scorer (pure function); Celery fusion task; validator extension for observed-vs-reported framing. Verify: correlated articles for at least one AOI pass the gates and appear cited in a regenerated brief; a deliberately irrelevant article is demonstrably rejected; kill-switch flag tested both ways.
 - **Phase 6 — Frontend arena.** MapLibre app: AOI draw, before/after slider, detection overlays, brief panel with click-to-evidence (detections highlight on map; article citations open the source). Verify: the <2-minute demo works for all three showcase AOIs.
-- **Phase 7 — Polish.** README with demo GIF, the three AOI showcases pre-loaded, one-command spin-up, resume bullet finalized against reality.
+- **Phase 7 — Polish.** README with demo GIF, the two showcase AOIs pre-loaded, one-command spin-up, resume bullet finalized against reality.
 
 ---
 
