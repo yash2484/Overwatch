@@ -291,10 +291,11 @@ audit context; this is the authoritative dependency-ordered queue.
 - [ ] Preserve the five-window baseline artifacts unchanged. Every candidate must write a separate
   result pair and record detector commit, PRODES archive hash, scene ids, usable/valid fractions,
   sampling frame, per-window metrics, and micro-averaged confusion counts.
-- [ ] Final feasibility gate: predeclare a 3-cell Pará holdout from PRODES truth (low/medium/high
-  density, no overlap with the five benchmark bboxes) before scoring, run the unchanged shipped
-  preset on it, optionally compare `ndvi_before >= 0.65` on the same cells, then make the binary
-  retain/drop product decision. See `HANDOVER-forest-final-chance.md`.
+- [x] Final feasibility gate retired with the retain/drop decision (2026-08-19): forest is closed
+  as a research extension, not a demonstrated capability. Rationale: the five-window baseline's
+  failure is systematic (two-date optical NDVI cannot separate clearing from harvest/seasonal
+  change), so a spatial holdout would not change the product decision. No holdout scoring was run.
+  The `--windows` holdout runner stays as generic evaluation tooling for future detectors.
 - [ ] Accept a forest change only if a fresh five-window run improves the declared target metric
   without hiding material per-window regressions. Run focused tests, the complete backend suite,
   Ruff check/format, and `git diff --check` before recording or committing the result.
