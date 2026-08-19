@@ -11,8 +11,8 @@ Use this section for resume bullets, LinkedIn posts, portfolio case studies, and
 - **The shipped threshold is evidence-backed.** On the held-out test split, `0.55` produced the highest F1. Higher thresholds raised precision but reduced recall enough to lower F1. Quote the full tradeoff when discussing another threshold.
 - **Scope the claim correctly.** OSCD labels urban change, so these figures validate construction/port-style change detection rather than universal port-activity accuracy. The live Vizhinjam result is separate evidence: **16 detections** and **78.9 ha** after a terminal-centered spatial prior. It demonstrates the workflow but does not provide a held-out accuracy score.
 - **Flood has separate, narrower evidence.** The date-matched Porto Alegre EMSN194 case scored precision **0.586**, recall **0.605**, F1 **0.595**, and IoU **0.424**. These figures cover one event, footprint, and observation date.
-- **Forest is the only unresolved vertical.** The five-window PRODES baseline scored precision **0.216**, recall **0.384**, F1 **0.277**, and IoU **0.161**, with severe location dependence. Do not present that baseline or the temporary `ndvi_before` candidates as production accuracy. The remaining question is whether two-date red/green/blue/NIR imagery can separate permanent clearing from harvest, seasonal vegetation change, degraded canopy, haze, and shadow across held-out locations.
-- **Forest remains future work unless the final holdout transfers.** A production forest capability would need held-out spatial validation and may require multi-temporal evidence, seasonal normalization, and stronger spectral features such as SWIR-derived NBR/NDMI.
+- **Forest is the only vertical closed as a research extension (2026-08-19).** The five-window PRODES baseline scored precision **0.216**, recall **0.384**, F1 **0.277**, and IoU **0.161**, with severe location dependence (Novo Progresso collapsed to precision **0.011**). The failure is systematic, not cell-specific: two-date optical NDVI cannot separate permanent clearing from harvest, seasonal vegetation change, degraded canopy, haze, and shadow. A spatial holdout would not change the product decision because the detector already demonstrated location dependence across the five benchmark cells, including collapse on the flagship Novo Progresso AOI. Do not present the baseline or the temporary `ndvi_before` candidates as production accuracy.
+- **Forest stays future work pending stronger evidence.** A production forest capability would require multi-temporal evidence, seasonal normalization, and stronger spectral features such as SWIR-derived NBR/NDMI, validated on held-out locations. The decision is closed; the five-window baseline is the recorded negative evidence.
 
 ### Short portfolio wording
 
@@ -179,6 +179,9 @@ is not a second year label and must not be filtered against an invented July cut
   0.38420807368286397, F1 0.27660620692263793, IoU 0.1605008721939973. This is a truth-stratified,
   five-cell Pará baseline, not a statewide or Amazon-wide estimate. Full evidence lives in
   `benchmarks/results/prodes-amazon-2024-forest-five-window.json`.
+- Product decision closed 2026-08-19: forest is a research extension, not a demonstrated capability.
+  The retain/drop gate is retired; no holdout scoring was run because the baseline's systematic
+  location dependence already answers the decision.
 - Treat the tracked five-window result as immutable baseline evidence. A candidate experiment writes
   a separate detailed result and generated summary; it must retain the detector commit, archive hash,
   scene ids, usable and valid fractions, sampling frame, per-window scores, and pooled confusion

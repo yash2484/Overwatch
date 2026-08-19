@@ -9,7 +9,7 @@
 
 ## 0. One-Paragraph Pitch
 
-A platform that watches the Earth for you. Users define areas of interest (AOIs) anywhere on the planet; Overwatch automatically pulls free Sentinel-2 satellite imagery on a schedule, detects meaningful change over time, stores detections as queryable geospatial events, and generates analyst-grade intelligence briefs where **every claim links to the exact pixels and dates that support it**. The current demonstrated verticals are port construction and flooding. Forest-loss monitoring remains a research extension because two-date optical imagery has not yet shown reliable cross-location separation of permanent clearing from harvest and seasonal vegetation change.
+A platform that watches the Earth for you. Users define areas of interest (AOIs) anywhere on the planet; Overwatch automatically pulls free Sentinel-2 satellite imagery on a schedule, detects meaningful change over time, stores detections as queryable geospatial events, and generates analyst-grade intelligence briefs where **every claim links to the exact pixels and dates that support it**. The current demonstrated verticals are port construction and flooding. Forest-loss monitoring was closed as a research extension in August 2026 after a five-window PRODES baseline (precision **0.216**, recall **0.384**, F1 **0.277**, IoU **0.161**) showed two-date optical imagery cannot reliably separate permanent clearing from harvest and seasonal vegetation change across locations.
 
 ---
 
@@ -239,7 +239,7 @@ The `ChangeDetector` interface makes this a drop-in: train/fine-tune a change-se
   **MEASURED for the demonstrated construction and flood workflows, with different scope boundaries:**
   construction against OSCD (2026-08-04) and flood against one date-matched EMSN194 case
   (2026-08-15). These results are not interchangeable or evidence of one global detector accuracy
-  figure. Forest remains an unresolved research extension rather than a demonstrated production capability.
+  figure. Forest was evaluated against a five-window PRODES baseline and closed as a research extension (2026-08-19), not a demonstrated production capability.
 - **Construction (`port`):** against OSCD (§7's benchmark), **precision 0.345, recall 0.526, F1
   0.417, IoU 0.263** on the 10-scene held-out test split, with the shipped preset untuned against the
   benchmark. Sayable on paper, with its scope attached:
@@ -261,8 +261,9 @@ The `ChangeDetector` interface makes this a drop-in: train/fine-tune a change-se
 - **Forest:** retain the PRODES five-window result as internal negative evidence rather than a
   production accuracy claim. The unchanged preset scored **precision 0.216, recall 0.384, F1 0.277,
   IoU 0.161** and showed severe location dependence; Novo Progresso scored precision **0.0110**.
-  The final gate is a held-out spatial transferability test. If it fails, describe forest monitoring
-  as future work requiring multi-temporal, seasonal, and stronger spectral evidence.
+  The failure is systematic (two-date optical cannot separate clearing from harvest/seasonal
+  change), so the retained holdout gate was retired rather than run. Describe forest monitoring as
+  future work requiring multi-temporal, seasonal, and stronger spectral (SWIR/NBR/NDMI) evidence.
 - Any latency/throughput number (e.g., "AOI-to-brief in under N minutes") — **still unmeasured.**
 - Scene/AOI counts — must reflect actually-processed volumes.
 

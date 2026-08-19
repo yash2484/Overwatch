@@ -22,7 +22,7 @@ The Porto Alegre flood result has a single-case EMSN194 benchmark: precision **0
 
 The port construction workflow has an independent held-out OSCD benchmark over 10 urban-change scenes: precision **0.345**, recall **0.526**, F1 **0.417**, and IoU **0.263**. The shipped SSIM threshold `0.55` maximizes F1 on that split. Recall and F1 are the useful headline measures. Precision is lower because generic structural change also responds to non-target roads, roofs, bare soil, shadows, seasonal appearance, and other urban restructuring. This is a specificity limitation rather than a cloud-quality claim.
 
-Forest loss is not presented as a reliable production capability. The PRODES result remains a reproducible internal baseline while a final held-out spatial test determines whether forest belongs in the demonstrated product. Port and flood metrics do not generalize to forest.
+Forest loss is not presented as a reliable production capability. An August 2026 evaluation against the INPE PRODES five-window baseline closed forest as a research extension: precision **0.216**, recall **0.384**, F1 **0.277**, IoU **0.161**, with severe location dependence (Novo Progresso precision **0.011**). Two-date optical evidence does not reliably separate permanent clearing from harvest and seasonal vegetation change, so forest remains a future extension rather than a demonstrated product claim. Port and flood metrics do not generalize to forest.
 
 ## Architecture
 
@@ -115,7 +115,7 @@ The verified baseline is **340 backend tests passed, 1 documented xfail, and 18 
 ## Known Limitations
 
 - The flood benchmark is one date-matched Porto Alegre case, not a broad accuracy claim.
-- Forest accuracy remains unresolved. The final forest phase is a held-out spatial transferability test. If two-date optical evidence cannot reliably separate permanent clearing from harvest and seasonal vegetation change, forest will remain a future extension rather than a headline demo claim.
+- Forest accuracy is closed as a research extension (2026-08-19). The five-window PRODES baseline showed precision **0.216**, recall **0.384**, F1 **0.277**, and IoU **0.161** with severe location dependence; two-date optical evidence did not reliably separate permanent clearing from harvest and seasonal vegetation change. Forest remains a future extension rather than a headline demo claim.
 - GDELT fusion's remaining live gate requires a genuinely different network because the current IP has a long-lived rate-limit block.
 - The frontend production bundle is approximately 2.06 MB, or 582 kB gzip. Code splitting is tracked as an optional follow-up.
 - Real brief generation requires a funded Anthropic account and `OVERWATCH_ANTHROPIC_API_KEY`. The seeded demo data is read-only and data-grounded.
