@@ -3,28 +3,24 @@ import type { DetectionFeature } from "../api/types";
 /** What each vertical monitors — the "what am I looking at" line. */
 export const MONITOR_LABEL: Record<string, string> = {
   port: "Port construction",
-  forest: "Deforestation",
   flood: "Flood monitoring",
 };
 
 /** Human noun per change type, with an explicit plural (naive +s mangles "area of loss"). */
 export const CHANGE_NOUN: Record<string, { one: string; many: string }> = {
   construction: { one: "construction site", many: "construction sites" },
-  vegetation_loss: { one: "area of forest loss", many: "areas of forest loss" },
   flooding: { one: "flooded area", many: "flooded areas" },
 };
 
 /** Short label for the legend. */
 export const CHANGE_SHORT: Record<string, string> = {
   construction: "Construction",
-  vegetation_loss: "Forest loss",
   flooding: "Flooding",
 };
 
 /** CSS token per change type — the same hue the polygons use on the map. */
 export const CHANGE_COLOR_VAR: Record<string, string> = {
   construction: "var(--color-change-construction)",
-  vegetation_loss: "var(--color-change-clearing)",
   flooding: "var(--color-change-water)",
 };
 
