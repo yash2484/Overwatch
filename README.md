@@ -13,7 +13,7 @@ The primary demo state is Porto Alegre, using the date-matched Sentinel-2 pair f
 
 - 104 flooding detections
 - 1,841.2 ha of emitted detection area
-- Validated Claude Sonnet 5 brief `1601`
+- Validated Claude Opus 4.8 brief `1732`
 - 11 date-valid news articles in the fusion window
 - Every displayed detection and brief uses scene pair `17 -> 5392`
 
