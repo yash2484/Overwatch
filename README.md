@@ -1,118 +1,106 @@
 # Overwatch
 
-Overwatch is a geospatial change-detection console for monitoring areas of interest with Sentinel-2 imagery. It selects usable imagery, detects meaningful change with deterministic rules, joins detections with GDELT news, and produces evidence-linked intelligence briefs.
+Satellite change detection with an evidence trail. Give it a place and two dates, and it tells you what changed — with every figure in the written summary traceable back to a specific polygon in the database.
 
-The current demo is a read-only console over two seeded AOIs:
+![The Overwatch console showing the May 2024 Porto Alegre floods: a swipe comparison of before and after Sentinel-2 imagery with detected flood polygons outlined, next to a generated intelligence brief](docs/demo.png)
 
-- Porto Alegre, flood
-- Vizhinjam, port construction
+This is a side project, built solo over about seven weeks. It runs on real Sentinel-2 imagery, real Copernicus and INPE ground truth, and a real Claude API key. The accuracy numbers below were measured rather than estimated, and the "What doesn't work" section is deliberately about as long as the rest.
 
-## Current Demo
+## The two demo areas
 
-The primary demo state is Porto Alegre, using the date-matched Sentinel-2 pair from **2024-04-18 to 2024-05-08**.
+**Porto Alegre, Brazil — the May 2024 Rio Grande do Sul floods.** Comparing 18 April against 8 May 2024, the detector emits **104 flood polygons covering 1,841 ha**. The brief written over them links to 11 news articles published in the same window.
 
-- 104 flooding detections
-- 1,841.2 ha of emitted detection area
-- Validated Claude Opus 4.8 brief `1732`
-- 11 date-valid news articles in the fusion window
-- Every displayed detection and brief uses scene pair `17 -> 5392`
+**Vizhinjam, India — a deepwater transshipment terminal under construction.** Comparing February 2021 against February 2025 finds **16 construction polygons over 79 ha**, clustered on the terminal itself.
 
-The secondary demo state is Vizhinjam, using the Sentinel-2 pair from **2021-02-12 to 2025-02-11**.
+Both are read-only in the demo. The console lets you swipe between the before and after scenes, scrub a timeline, click a polygon to find the sentence that describes it, and click a sentence to fly to the polygons backing it.
 
-- 16 construction detections
-- 78.9 ha of emitted detection area
-- Validated Claude Sonnet 5 brief `1548`
-- Every displayed detection and brief uses scene pair `5 -> 11`
-
-The Porto Alegre flood result has a single-case EMSN194 benchmark: precision **0.586**, recall **0.605**, F1 **0.595**, and IoU **0.424**. These numbers describe this date-matched flood case only. One caveat belongs on every use of them: CEMS produced that analyst-reviewed delineation from same-day Sentinel-2 plus radar, so the truth is authoritative but **not fully independent** of the optical acquisition being scored.
-
-The port construction workflow has a held-out OSCD benchmark over 10 urban-change scenes: precision **0.325**, recall **0.280**, F1 **0.301**, and IoU **0.177**. These figures are measured on the preset as shipped, including its 2 km terminal-centered spatial prior, and the run is bit-reproducible.
-
-Two separate limits produce those numbers, and they should not be collapsed into one:
-
-- **Precision** is bounded by specificity. Generic structural change also responds to non-target roads, roofs, bare soil, shadows, and seasonal appearance. This is not a cloud-quality claim.
-- **Recall** is bounded by scope. The spatial prior keeps only change within 2 km of the largest detection, which is correct for a single-subject port AOI and actively wrong for a whole-city benchmark. On the scenes where OSCD labels change across an entire metro area, precision stays high while recall collapses (chongqing 0.697/0.061, milano 0.823/0.085). OSCD is therefore a conservative benchmark for this preset, not a flattering one.
-
-The shipped SSIM threshold `0.55` is the F1 maximum of a 0.40–0.70 sweep on that split. It was set on Vizhinjam imagery on 2026-08-02, eleven days before the OSCD data was downloaded (`git log -S'threshold=0.55'` → `6f9524f`), so the agreement is external validation rather than fitting.
-
-Forest loss is not presented as a reliable production capability. An August 2026 evaluation against the INPE PRODES five-window baseline closed forest as a research extension: precision **0.216**, recall **0.384**, F1 **0.277**, IoU **0.161**, with severe location dependence (Novo Progresso precision **0.011**). Two-date optical evidence does not reliably separate permanent clearing from harvest and seasonal vegetation change, so forest remains a future extension rather than a demonstrated product claim. Port and flood metrics do not generalize to forest.
-
-## Architecture
+## How it works
 
 ```text
-Sentinel-2 / Earth Search
-          |
-          v
-Imagery gating + SCL usability
-          |
-          v
-ChangeDetector -> PostGIS detections
-          |             |
-          |             +--> GeoJSON API -> React console
-          v
-GDELT fusion -> evidence validator -> brief API
+Earth Search STAC  ──►  scene selection + SCL usability gate
+                                    │
+                        windowed COG reads, band harmonisation
+                                    │
+                        ChangeDetector  ──►  PostGIS polygons
+                                    │                  │
+                        GDELT news fusion              └──►  GeoJSON API ──► React console
+                                    │
+                        Claude writes a brief  ──►  deterministic validator  ──►  brief API
 ```
 
-- **Backend:** FastAPI, SQLAlchemy, PostGIS, Celery, Redis, Rasterio, Shapely, and Pydantic.
-- **Imagery:** Earth Search STAC metadata plus windowed public COG reads. AOI-level SCL usability is the acceptance gate; catalog cloud cover ranks candidates without vetoing a usable AOI.
-- **Detection:** deterministic NDVI/NDWI/SSIM rules, morphology, polygonization, and per-vertical presets. No LLM is used to decide whether pixels changed.
-- **Evidence:** validated claims link to stored detection or article rows. Numeric detection claims are checked against linked geometry; reported news remains explicitly reported speech.
-- **Frontend:** React 19, Vite, TypeScript, TanStack Query, MapLibre GL v5, deck.gl, and Tailwind CSS. The console supports scene comparison, swipe imagery, timeline selection, map-to-claim linking, and a read-only command palette.
+1. **Find usable imagery.** [`imagery/earth_search.py`](backend/src/overwatch/imagery/earth_search.py) queries the Earth Search STAC catalog for Sentinel-2 L2A scenes. Catalog cloud cover only ranks candidates — the actual gate is the fraction of the AOI that reads as usable in the scene's own SCL plane, so a scene with a cloud bank parked outside the AOI still qualifies.
+2. **Read only what's needed.** Windowed reads pull red, green, blue, NIR and SCL straight from the public COGs. [`imagery/harmonize.py`](backend/src/overwatch/imagery/harmonize.py) applies the ESA baseline-04.00 DN offset so scenes from either side of the 2022 reprocessing are comparable.
+3. **Detect change deterministically.** [`detection/detector.py`](backend/src/overwatch/detection/detector.py) computes spectral index deltas (NDVI, NDWI) and SSIM structural dissimilarity, ANDs a per-vertical set of threshold rules over the usable pixels, cleans the mask with morphological open/close, and polygonises what survives a minimum-area floor. **No model decides whether a pixel changed.**
+4. **Join the news.** [`fusion/provider.py`](backend/src/overwatch/fusion/provider.py) retrieves candidate articles from GDELT and hands every one to a pure scorer that applies the date, place and topic gates. Retrieval and judgement are kept apart so the gating is unit-testable without a network.
+5. **Write it up, then check it.** Claude receives the detection and article *rows* — never pixels — and writes a brief of typed claims. [`briefs/validator.py`](backend/src/overwatch/briefs/validator.py) then checks it: every observed claim must cite a real detection, quoted areas must reconcile against the linked geometry, dates must match a scene date, and a claim backed only by journalism has to read as reported speech and carry no figures. A failing draft goes back with its violations attached, up to a retry budget.
 
-## Quick Start
+The point of step 5 is the direction of trust. The language model is the untrusted component; a few hundred lines of regex and arithmetic decide whether its output is allowed to be served.
 
-Requirements: Docker Desktop with WSL2, Node.js, and npm. Rasterio/GDAL work is intended to run inside Docker rather than native Windows Python.
+## Accuracy
 
-1. Copy `.env.example` to `.env`. Keep secrets in `.env`; never commit it.
-2. Start the backend dependencies and API:
+Scored against three independent public ground-truth sets. All of these are re-derivable — the commands are in [Verification](#verification).
 
-   ```bash
-   docker compose up -d postgis redis api
-   ```
+**Construction, against [OSCD](https://rcdaudt.github.io/oscd/)** (Onera Satellite Change Detection: Sentinel-2 pairs with hand-drawn pixel-level change masks):
 
-3. Start the host frontend. The repository's local Compose override maps the API to port `8001` because other local projects may use `8000`:
+| split | scenes | precision | recall | F1 | IoU |
+|---|---|---|---|---|---|
+| test (held out) | 10 | 0.325 | 0.280 | 0.301 | 0.177 |
+| train | 14 | 0.189 | 0.271 | 0.222 | 0.125 |
 
-   ```bash
-   cd frontend
-   VITE_API_PROXY_TARGET=http://127.0.0.1:8001 npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
-   ```
+Measured on the preset exactly as it ships, spatial prior included. Two different limits produce those numbers and they're worth separating:
 
-   On Windows PowerShell:
+- **Precision** is a specificity limit. A generic structural-change signal also fires on roads, roofs, bare soil, shadows and seasonal appearance.
+- **Recall** is a scope limit, and it's self-inflicted on purpose. The preset keeps only change within 2 km of the largest detection, which is right for watching one port and wrong for a benchmark that labels change across a whole city. On metro-wide scenes precision holds up while recall falls away (chongqing 0.697/0.061, milano 0.823/0.085). OSCD scores this preset conservatively — which is the more useful direction for a benchmark to be wrong in.
 
-   ```powershell
-   $env:VITE_API_PROXY_TARGET = "http://127.0.0.1:8001"
-   npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
-   ```
+The SSIM threshold of `0.55` is the F1 maximum of a 0.40–0.70 sweep on the held-out split. It was set by eye on Vizhinjam imagery eleven days before the OSCD data was downloaded (`git log -S'threshold=0.55'`), so the agreement is external validation rather than curve-fitting.
 
-4. Open:
+**Flood, against [Copernicus EMSN194](https://riskandrecovery.emergency.copernicus.eu/)** — the analyst-delineated Porto Alegre flood extent for 8 May 2024: precision **0.586**, recall **0.605**, F1 **0.595**, IoU **0.424**.
 
-   - Console: http://localhost:5173/
-   - API docs: http://localhost:8001/docs
-   - API health: http://localhost:8001/health
+One event, one footprint, one date. And one caveat that belongs on every use of it: CEMS produced that delineation from same-day Sentinel-2 plus radar, so the truth is authoritative but **not fully independent** of the optical acquisition being scored.
 
-The Compose frontend is a baked production image without a source bind mount. Use the host Vite server for development and stop any Compose frontend container that occupies port `5173`.
+**Forest, against [INPE PRODES](https://terrabrasilis.dpi.inpe.br/)** — and this one is why forest isn't in the demo. Precision **0.216**, recall **0.384**, F1 **0.277**, with severe location dependence (Novo Progresso collapsed to precision **0.011**). Two-date optical NDVI can't reliably separate permanent clearing from harvest, seasonal change and haze. The vertical was closed as a research extension and removed from the product rather than shown quietly. The negative result is kept in [`benchmarks/results/`](benchmarks/results/).
 
-To stop the demo without deleting database data:
+Port and flood numbers do not transfer to forest. The PRODES run is the evidence they don't.
+
+## Running it
+
+You'll need Docker Desktop with WSL2, Node, and npm. GDAL work happens inside Docker rather than native Windows Python.
+
+```bash
+cp .env.example .env          # keep secrets here; never commit it
+docker compose up -d postgis redis api
+```
+
+```bash
+cd frontend
+npm install
+npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
+```
+
+Then open the console at http://localhost:5173/, the API docs at http://localhost:8000/docs, and health at http://localhost:8000/health.
+
+If you keep a local `docker-compose.override.yml` that remaps the API port (this repo's does, to `8001`, because port 8000 is usually taken), point Vite at it:
+
+```bash
+VITE_API_PROXY_TARGET=http://127.0.0.1:8001 npm run dev -- --port 5173 --strictPort
+```
+
+The Compose `frontend` service is a baked production image with no source bind-mount, so use the host Vite server for development and stop the container if it's holding port 5173.
+
+To stop without losing the database:
 
 ```bash
 docker compose stop api redis postgis frontend worker beat
 ```
 
-To release WSL/Docker memory after stopping the stack on Windows:
-
-```powershell
-& "$env:ProgramFiles\Docker\Docker\DockerCli.exe" -Shutdown
-wsl --shutdown
-```
-
 ## Verification
 
-Backend checks run in the API image and require PostGIS:
+Backend checks run in the API image and need PostGIS:
 
 ```bash
 docker compose run --rm --no-deps api ruff check src tests
 docker compose run --rm --no-deps api ruff format --check src tests
-docker compose run --rm --no-deps api pytest -q
+docker compose exec -T api pytest -q
 ```
 
 Frontend checks run on the host:
@@ -123,28 +111,41 @@ npm run build
 npm run test -- --pool=forks --no-file-parallelism
 ```
 
-The verified baseline is **403 backend tests passed, 1 documented xfail (404 collected), and 18 frontend tests passed**. The xfail tracks the known limitation that flood precision on turbid water needs SWIR; the current ingestion set does not fetch SWIR bands.
+Current baseline: **403 backend tests passed, 1 documented xfail** (404 collected) and **18 frontend tests passed**. The xfail is real and tracks the turbid-water limitation described below.
 
-## Known Limitations
+Re-derive the benchmark numbers (OSCD data must be downloaded into `data/oscd/` first — it isn't in the repo):
 
-- The flood benchmark is one date-matched Porto Alegre case, not a broad accuracy claim.
-- Forest accuracy is closed as a research extension (2026-08-19). The five-window PRODES baseline showed precision **0.216**, recall **0.384**, F1 **0.277**, and IoU **0.161** with severe location dependence; two-date optical evidence did not reliably separate permanent clearing from harvest and seasonal vegetation change. Forest remains a future extension rather than a headline demo claim.
-- GDELT fusion's remaining live gate requires a genuinely different network because the current IP has a long-lived rate-limit block.
-- The frontend production bundle is approximately 2.06 MB, or 582 kB gzip. Code splitting is tracked as an optional follow-up.
-- Real brief generation requires a funded Anthropic account and `OVERWATCH_ANTHROPIC_API_KEY`. The seeded demo data is read-only and data-grounded.
+```bash
+docker compose exec -T api python -m overwatch.eval.run_oscd --split test
+docker compose exec -T api python -m overwatch.eval.run_oscd --split test --sweep
+```
 
-## Repository Workflow
+## What doesn't work
 
-`main` is integration-only. Substantive work starts on a typed branch such as `feat/<topic>`, `fix/<topic>`, `refactor/<topic>`, or `phase-<number>-<topic>`.
+The honest list, because a demo that only shows the good parts isn't worth much.
 
-After a coherent feature, fix, or significant update passes its tests and review, create a focused local conventional commit automatically. Keep progress documentation in a separate checkpoint when practical. Never commit secrets, generated evidence, or exported session transcripts.
+- **Flood detection can't tell shaded vegetation from water.** NDWI rises when a canopy is shaded, so a dark hillside can clear both flood rules. The fix is SWIR — water absorbs it almost totally whatever its sediment load, and vegetation doesn't — but the ingestion set currently fetches only red/green/blue/NIR/SCL. This is tracked as a failing-by-design test rather than hidden, and an absolute after-image gate was tried for it and withdrawn the same day because it rejected 1,007 ha of the genuine turbid floodwater it was meant to keep.
+- **Nothing runs on a schedule.** The weekly re-check logic exists and is unit-tested, but no scheduled job has ever actually fired. Every pipeline run in this repo was submitted by hand.
+- **Live GDELT fusion is blocked.** The current IP has a long-lived rate-limit block, so the news in the demo was fetched earlier and stored. Vizhinjam has no articles at all.
+- **The validator checks areas and dates, not everything.** Percentages and bare numbers in observed claims aren't cross-checked, and the area check fails *open* on units it can't parse (acres, "sq km"). "Every area figure reconciles against the linked geometry and every date matches a scene date" is true. "Every number is checked" is not.
+- **Benchmarks aren't reproducible from a clean clone.** `data/` is gitignored, so OSCD (~490 MB) has to be downloaded by hand, and the EMSN194 and PRODES archives aren't kept locally at all — only their results, with the SHA-256 of each source archive recorded.
+- **Nothing here has been load-tested.** Two areas of interest, a handful of pipeline runs, one machine. A full run takes six to fifteen minutes.
+- **The frontend bundle is 2.06 MB** (582 kB gzipped). Code splitting is an open follow-up.
+- **Detection `confidence` is not a probability.** It's the fraction of pixels inside a polygon that exceeded the rule threshold. Useful for ranking, meaningless as a certainty.
 
-Pushes, pull requests, and merges require explicit approval. Pull requests are checked by GitHub Actions for branch naming, backend lint/tests, and frontend build.
+## Stack
 
-## Project Documents
+**Backend** — FastAPI, SQLAlchemy, PostGIS, Celery, Redis, Rasterio, Shapely, Pydantic v2, Alembic.
+**Frontend** — React 19, Vite, TypeScript, TanStack Query, MapLibre GL v5, deck.gl, Tailwind.
+**Evaluation** — a small harness in [`overwatch.eval`](backend/src/overwatch/eval/) that scores the shipped presets against OSCD, EMSN194 and PRODES, writing results with the truth archive's SHA-256 and the detector commit that produced them.
 
-- [Project scope](PROJECT.md)
-- [Design specifications](design-specs/)
-- [Current progress and task queue](PROGRESS.md)
-- [Domain context and engineering gotchas](CONTEXT.md)
-- [Implementation plans](plans/)
+## Further reading
+
+- [PROJECT.md](PROJECT.md) — scope, and what may and may not be claimed from each result
+- [CONTEXT.md](CONTEXT.md) — domain glossary and the gotchas that cost the most time
+- [PROGRESS.md](PROGRESS.md) — running log, including the accuracy corrections
+- [design-specs/](design-specs/) and [plans/](plans/) — the design documents each phase was built from
+
+## License
+
+MIT. See [LICENSE](LICENSE).
