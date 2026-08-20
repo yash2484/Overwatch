@@ -4,6 +4,23 @@
 
 ## Current phase
 **Demo-ready (2026-08-19). All work merged to `main` at `686fa50` and pushed: forest closure docs, PRODES eval tooling, and the demo-without-forest showcase (two seeded AOIs — porto-alegre flood, vizhinjam port — each with validated briefs). Forest is closed as a research extension. The sole remaining external item is the Phase 5 live-GDELT gate (needs a funded Anthropic org plus a genuinely different network).**
+### OSCD figures corrected (2026-08-21)
+
+**Every published OSCD number was wrong for 8 days, and the cause was a preset change that outran its own benchmark.** On 2026-08-13 the benchmark was committed at 12:00:16 (`2398aa7`) and its results were documented at 12:04:12 (`ef3631d`). At 16:24:16 the same day, `c359f83` added `focus_radius_m=2000` to the `port` preset. The benchmark was never re-run, so `README.md`, `CONTEXT.md`, `PROGRESS.md`, and `PROJECT.md` all went on publishing figures for a detector that had stopped shipping four hours and twenty minutes earlier.
+
+| | precision | recall | F1 | IoU |
+|---|---|---|---|---|
+| published until 2026-08-21 (`focus_radius_m=None`) | 0.345 | 0.526 | 0.417 | 0.263 |
+| **shipped preset, re-measured 2026-08-21** | **0.325** | **0.280** | **0.301** | **0.177** |
+
+Recall was overstated by 88% in relative terms. Re-derive with
+`docker compose exec -T api python -m overwatch.eval.run_oscd --split test` (and `--split train`);
+the run is bit-identical across invocations (tp=44,540 fp=92,394 fn=114,537 tn=2,826,465 on test).
+
+Also corrected in the same pass: the verified test-count baseline (405 → **403 passed, 1 xfailed, 404 collected**), and the missing EMSN194 independence caveat — the result file has always carried it (`caveats[1]`), but no prose doc repeated it.
+
+**Recurrence risk, open.** Nothing in the repo can catch this class of drift: the benchmark data lives under the gitignored `data/`, so no CI job can re-score the shipped preset and diff it against the documented figures. Until that gap is closed, *any* preset change must be treated as invalidating every published accuracy number until the benchmark is re-run by hand.
+
 Historical Phase 6 gate (kept for the record):
 Executed `plans/2026-07-12-phase-6-frontend-arena.md` via `superpowers:executing-plans`, verifying each task live in
 the browser (Playwright screenshots). **Verification gate GREEN:** tsc clean; 14 frontend tests; 296 backend tests;
@@ -25,7 +42,7 @@ faint 4.61:1 on panel); `prefers-reduced-motion` block present.
 *Upgrades folded in (user-approved):* vector graphite basemap; clip-path swipe; evidence leader-line; ⌘K palette; React 19.
 
 *Key engineering facts for resume:*
-- **Accuracy narrative to reuse:** port construction is the strongest independently benchmarked workflow. The held-out OSCD test split scored precision **0.345**, recall **0.526**, F1 **0.417**, and IoU **0.263** over 10 scenes. Lead with recall and F1; explain precision as the specificity limit of generic SSIM structural change, not a cloud failure. The shipped `0.55` SSIM threshold is the held-out F1 maximum. Flood has separate single-case EMSN194 evidence: precision **0.586**, recall **0.605**, F1 **0.595**, and IoU **0.424**. Forest is the only unresolved vertical and must not appear as a current production accuracy claim. Canonical wording: `CONTEXT.md` § "Reusable accuracy and interview narrative."
+- **Accuracy narrative to reuse (restated 2026-08-21 — see "OSCD figures corrected" below):** the held-out OSCD test split scores precision **0.325**, recall **0.280**, F1 **0.301**, IoU **0.177** over 10 scenes on the preset *as shipped*, spatial prior included. Train split: **0.189 / 0.271 / 0.222 / 0.125** over 14 scenes. Do not lead with one metric — give the two limits separately: precision is a specificity limit of generic SSIM structural change; recall is a scope limit imposed deliberately by the 2 km spatial prior, which is right for a single-subject port AOI and wrong for a whole-city benchmark. Recall is stable across splits (0.280 vs 0.271); precision is not (0.325 vs 0.189). The shipped `0.55` SSIM threshold is the held-out F1 maximum and predates the dataset by 11 days. Flood has separate single-case EMSN194 evidence: precision **0.586**, recall **0.605**, F1 **0.595**, IoU **0.424** — always with the independence caveat (CEMS truth used the same-day acquisition). Forest is closed as a research extension and must not appear as a production accuracy claim. **The pre-2026-08-21 figures (0.345/0.526/0.417/0.263) are retired and must not be reused.** Canonical wording: `CONTEXT.md` § "Reusable accuracy and interview narrative."
 - **maplibre-gl pinned to v5** — deck.gl 9.3 `MapboxOverlay` crashes on v6's refactored camera internals (`_nearZ`).
 - **Frontend dev runs on the HOST** (`cd frontend && npm run dev`, localhost:5173). The compose `frontend` service bakes source with no bind-mount and shadows the port — **`docker compose stop frontend`** before host dev. Vite proxies `/api` → localhost:8000.
 - Backend render robustness: `_scene_meta` backfills pre-Phase-6 rows (porto-alegre) + derives UTM epsg from the MGRS tile; console renders at fixed_max=3000, gamma=0.75.
@@ -220,7 +237,10 @@ audit context; this is the authoritative dependency-ordered queue.
   emitted **104 detections / 1,841.2 ha** against **1,774.55 ha** of truth on valid pixels; valid
   fraction was **0.8843450236496518**. Eight generated artifacts passed structural review, and the
   tracked evidence matched the fresh summary semantically. These figures describe one case. They
-  are not a general flood accuracy result. Verification commands:
+  are not a general flood accuracy result. **Independence caveat (added 2026-08-21, from the result
+  file's own `caveats[1]`): CEMS produced the analyst-reviewed extent from same-day Sentinel-2 plus
+  radar, so the truth is authoritative but not fully independent of the optical acquisition being
+  scored.** Attach it to every external use of these numbers. Verification commands:
   `docker compose run --rm --no-deps api pytest -q tests/test_eval_emsn194.py` and
   `docker compose run --rm --no-deps api python -m overwatch.eval.run_emsn194`.
   Final branch gate: the complete backend suite passed **359 passed, 1 xfailed** with two existing
@@ -373,22 +393,30 @@ it without anyone hand-labelling: 24 Sentinel-2 pairs with human-drawn pixel-lev
 
 | split | scenes | precision | recall | F1 | IoU |
 |---|---|---|---|---|---|
-| **test (held out)** | 10 | 0.345 | **0.526** | **0.417** | **0.263** |
-| train | 14 | 0.185 | 0.514 | 0.272 | 0.158 |
+| **test (held out)** | 10 | 0.325 | **0.280** | **0.301** | **0.177** |
+| train | 14 | 0.189 | 0.271 | 0.222 | 0.125 |
 
 **Threshold sweep, test split** — the shipped 0.55 is the **F1 maximum**:
 
 | threshold | 0.40 | 0.45 | 0.50 | **0.55** | 0.60 | 0.65 | 0.70 |
 |---|---|---|---|---|---|---|---|
-| precision | 0.238 | 0.273 | 0.309 | **0.345** | 0.382 | 0.413 | 0.441 |
-| recall | 0.725 | 0.662 | 0.594 | **0.526** | 0.449 | 0.377 | 0.307 |
-| F1 | 0.359 | 0.387 | 0.406 | **0.417** | 0.413 | 0.394 | 0.362 |
+| precision | 0.167 | 0.200 | 0.269 | **0.325** | 0.375 | 0.413 | 0.443 |
+| recall | 0.385 | 0.350 | 0.306 | **0.280** | 0.242 | 0.193 | 0.151 |
+| F1 | 0.233 | 0.255 | 0.286 | **0.301** | 0.294 | 0.263 | 0.226 |
 
-- **What the numbers say:** recall is stable near **0.52 on both splits** while precision tracks how
-  much change a scene actually contains — strong where change is common (montpellier F1 0.712,
-  lasvegas 0.687, dubai 0.560) and poor below ~1% change (valencia 0.019, saclay_w 0.097, norcia
-  0.074). The detector finds roughly half the labelled change and over-fires where change is rare.
-  That is the honest characterisation, and it points at precision as the lever worth working on.
+- **What the numbers say:** recall is stable across splits (**0.280 test / 0.271 train**) while
+  precision tracks how much change a scene contains and how spatially concentrated it is —
+  strong where change is common and clustered (montpellier F1 0.713, cupertino 0.428,
+  lasvegas 0.414, rio 0.409) and poor where change is rare (valencia 0.008, pisa 0.048,
+  norcia 0.074).
+- **The recall ceiling is mostly the spatial prior, and that is a scope mismatch rather than a
+  detector failure.** `focus_radius_m=2000` keeps only change within 2 km of the largest
+  detection. On scenes where OSCD labels change across an entire metro area, that clips most of
+  the truth away and leaves a high-precision, low-recall signature: chongqing 0.697/0.061,
+  milano 0.823/0.085, mumbai 0.638/0.069, beirut 0.784/0.204. The prior is correct for a
+  single-subject port AOI and wrong for a whole-city benchmark, so OSCD scores this preset
+  conservatively. Quote it anyway — a benchmark chosen because it is unfavourable is worth more
+  than one chosen because it flatters.
 - **The 0.55 agreement is external validation, not fitting.** That threshold was set by eye on the
   Vizhinjam imagery (commit `6f9524f`, 2026-08-02) — before this dataset was downloaded — and lands
   on the F1 optimum of an independent 10-scene benchmark. Precision rises monotonically across the

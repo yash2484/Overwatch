@@ -24,9 +24,16 @@ The secondary demo state is Vizhinjam, using the Sentinel-2 pair from **2021-02-
 - Validated Claude Sonnet 5 brief `1548`
 - Every displayed detection and brief uses scene pair `5 -> 11`
 
-The Porto Alegre flood result has a single-case EMSN194 benchmark: precision **0.586**, recall **0.605**, F1 **0.595**, and IoU **0.424**. These numbers describe this date-matched flood case only.
+The Porto Alegre flood result has a single-case EMSN194 benchmark: precision **0.586**, recall **0.605**, F1 **0.595**, and IoU **0.424**. These numbers describe this date-matched flood case only. One caveat belongs on every use of them: CEMS produced that analyst-reviewed delineation from same-day Sentinel-2 plus radar, so the truth is authoritative but **not fully independent** of the optical acquisition being scored.
 
-The port construction workflow has an independent held-out OSCD benchmark over 10 urban-change scenes: precision **0.345**, recall **0.526**, F1 **0.417**, and IoU **0.263**. The shipped SSIM threshold `0.55` maximizes F1 on that split. Recall and F1 are the useful headline measures. Precision is lower because generic structural change also responds to non-target roads, roofs, bare soil, shadows, seasonal appearance, and other urban restructuring. This is a specificity limitation rather than a cloud-quality claim.
+The port construction workflow has a held-out OSCD benchmark over 10 urban-change scenes: precision **0.325**, recall **0.280**, F1 **0.301**, and IoU **0.177**. These figures are measured on the preset as shipped, including its 2 km terminal-centered spatial prior, and the run is bit-reproducible.
+
+Two separate limits produce those numbers, and they should not be collapsed into one:
+
+- **Precision** is bounded by specificity. Generic structural change also responds to non-target roads, roofs, bare soil, shadows, and seasonal appearance. This is not a cloud-quality claim.
+- **Recall** is bounded by scope. The spatial prior keeps only change within 2 km of the largest detection, which is correct for a single-subject port AOI and actively wrong for a whole-city benchmark. On the scenes where OSCD labels change across an entire metro area, precision stays high while recall collapses (chongqing 0.697/0.061, milano 0.823/0.085). OSCD is therefore a conservative benchmark for this preset, not a flattering one.
+
+The shipped SSIM threshold `0.55` is the F1 maximum of a 0.40–0.70 sweep on that split. It was set on Vizhinjam imagery on 2026-08-02, eleven days before the OSCD data was downloaded (`git log -S'threshold=0.55'` → `6f9524f`), so the agreement is external validation rather than fitting.
 
 Forest loss is not presented as a reliable production capability. An August 2026 evaluation against the INPE PRODES five-window baseline closed forest as a research extension: precision **0.216**, recall **0.384**, F1 **0.277**, IoU **0.161**, with severe location dependence (Novo Progresso precision **0.011**). Two-date optical evidence does not reliably separate permanent clearing from harvest and seasonal vegetation change, so forest remains a future extension rather than a demonstrated product claim. Port and flood metrics do not generalize to forest.
 
@@ -116,7 +123,7 @@ npm run build
 npm run test -- --pool=forks --no-file-parallelism
 ```
 
-The verified baseline is **405 backend tests passed, 1 documented xfail, and 18 frontend tests passed**. The xfail tracks the known limitation that flood precision on turbid water needs SWIR; the current ingestion set does not fetch SWIR bands.
+The verified baseline is **403 backend tests passed, 1 documented xfail (404 collected), and 18 frontend tests passed**. The xfail tracks the known limitation that flood precision on turbid water needs SWIR; the current ingestion set does not fetch SWIR bands.
 
 ## Known Limitations
 

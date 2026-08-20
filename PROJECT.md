@@ -240,24 +240,36 @@ The `ChangeDetector` interface makes this a drop-in: train/fine-tune a change-se
   construction against OSCD (2026-08-04) and flood against one date-matched EMSN194 case
   (2026-08-15). These results are not interchangeable or evidence of one global detector accuracy
   figure. Forest was evaluated against a five-window PRODES baseline and closed as a research extension (2026-08-19), not a demonstrated production capability.
-- **Construction (`port`):** against OSCD (§7's benchmark), **precision 0.345, recall 0.526, F1
-  0.417, IoU 0.263** on the 10-scene held-out test split, with the shipped preset untuned against the
-  benchmark. Sayable on paper, with its scope attached:
+- **Construction (`port`):** against OSCD (§7's benchmark), **precision 0.325, recall 0.280, F1
+  0.301, IoU 0.177** on the 10-scene held-out test split, measured on the preset as shipped
+  (spatial prior included) and untuned against the benchmark. Sayable on paper, with its scope
+  attached:
+  - ⚠️ **Figures restated 2026-08-21.** The previously published 0.345/0.526/0.417/0.263 described
+    the preset *before* `focus_radius_m=2000` was added on 2026-08-13 and are retired. See
+    `PROGRESS.md` § "OSCD figures corrected (2026-08-21)". Do not reuse them from an older draft.
   - **It covers the construction (`port`) preset only** — OSCD labels urban change. No figure may
     be implied for the forest or flood presets from this result.
-  - Quote the **test** split. The train split is weaker (F1 0.272) because those scenes contain
-    less change; omitting it would be cherry-picking, so report both or neither.
-  - Supporting detail worth having ready for an interviewer: recall holds near 0.52 on both splits
-    while precision follows the scene's change rate, and a threshold sweep puts the shipped 0.55 at
-    the F1 maximum — a value set on Vizhinjam imagery before the dataset was downloaded. Evidence
-    and per-scene tables in `PROGRESS.md`; harness in `overwatch.eval`.
-  - Lead with held-out recall **0.526** and F1 **0.417**. State precision **0.345** as the known
+  - Report **both splits**. Test 0.325/0.280/0.301/0.177 over 10 scenes; train 0.189/0.271/0.222/0.125
+    over 14. Omitting either would be cherry-picking.
+  - Supporting detail worth having ready for an interviewer: recall holds within 0.01 across the two
+    splits (0.280 / 0.271) while precision follows the scene's change rate (0.325 / 0.189), and a
+    threshold sweep puts the shipped 0.55 at the F1 maximum — a value set on Vizhinjam imagery
+    eleven days before the dataset was downloaded. Evidence and per-scene tables in `PROGRESS.md`;
+    harness in `overwatch.eval`.
+  - Give the two limits separately rather than leading with one number. Precision **0.325** is the
     specificity limit of generic SSIM structural change: it also responds to non-target roads,
-    roofs, bare soil, shadows, seasonal appearance, and other urban restructuring. Do not frame
-    this as a cloud-quality failure.
+    roofs, bare soil, shadows, seasonal appearance, and other urban restructuring. Recall **0.280**
+    is a scope limit deliberately imposed by the 2 km spatial prior, which is correct for a
+    single-subject port AOI and wrong for a whole-city benchmark. Neither is a cloud-quality
+    failure.
 - **Flood:** one date-matched Porto Alegre case against Copernicus EMSN194 scored **precision
   0.586, recall 0.605, F1 0.595, IoU 0.424**. This is evidence for that one event, footprint, and
   observation date, not a general flood estimate.
+  - ⚠️ **Always attach the independence caveat**, which the result file itself records
+    (`benchmarks/results/emsn194-porto-alegre-2024-05-08.json`, `caveats[1]`): CEMS produced the
+    analyst-reviewed extent from same-day Sentinel-2 plus radar, so the truth is authoritative but
+    **not fully independent** of the optical acquisition being scored. Volunteer this before a
+    reviewer asks — it is the first question the result invites.
 - **Forest:** retain the PRODES five-window result as internal negative evidence rather than a
   production accuracy claim. The unchanged preset scored **precision 0.216, recall 0.384, F1 0.277,
   IoU 0.161** and showed severe location dependence; Novo Progresso scored precision **0.0110**.
