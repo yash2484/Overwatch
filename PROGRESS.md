@@ -321,17 +321,12 @@ tested now against `FakeBriefGenerator`/seeded data and pointed at real briefs l
 
 **Blocked (external, not code) — both re-diagnosed on 2026-07-26, see the handover's §0 for full evidence:**
 
-1. **Articles cited in a validated brief (the SQL join proof) + the live stale flip** — needs a **funded** Console org,
-   not just a key. The env passthrough is proven working (`5c44499`) and a key was created and tested end-to-end this
-   session: it authenticated correctly and the API itself returned `400 "Your credit balance is too low"` — a real,
-   informative response, not an auth failure. **The org genuinely has $0.00; no payment has ever landed.** Root cause,
-   well-evidenced: the card is **RuPay** (routes internationally via Discover/Diners), and **RuPay generally does not
-   support one-time international card-not-present transactions** — even with the international-transactions toggle
-   on. Consistent with every observed symptom, including the Pro subscription (a *different*, recurring transaction
-   type via Link) renewing fine on the same card while every one-time charge attempt gets OTP'd for a literal `$0.00`
-   and never proceeds. **Fix: a Visa/Mastercard, any bank, for one ~$6 charge** — not necessarily the user's own card.
-   A fresh Anthropic account with possible trial credit is a secondary option. Do not re-run the DNS/network/incognito
-   diagnosis again — all exhausted this session, see the handover.
+1. ~~**Articles cited in a validated brief (the SQL join proof) + the live stale flip**~~ **RESOLVED 2026-08-20.** The SQL
+   join proof was already closed (brief `1601` carried 11 article evidence links, 0 dangling). The remaining live stale
+   flip was exercised against the real DB with the funded key: a `replace_articles` re-run over the porto-alegre pair
+   flipped brief `1601` to `stale` in the same transaction, then a fresh live generation produced validated brief
+   `1732` (`claude-opus-4-8`, attempt 2) with **6 article + 16 detection evidence links, 0 dangling**, and the demo
+   endpoint serves it. The `validated ⇒ every evidence link resolves` invariant is now proven live both ways.
 2. **Live GDELT fusion** — worse than previously recorded, not better. The 2026-07-13 handover called this a rate-limit
    problem; a 2026-07-14 retest found a clean `200 OK` returning **zero articles** for novo-progresso (an open bug, not
    rate-limiting). A 2026-07-25 retest — after **12 days of zero traffic from this IP** — got **`429` on the initial
@@ -601,21 +596,21 @@ Prior (PR #5, merged): Phase 2 engine end-to-end — Vizhinjam port pair → 9 c
      → needs the Anthropic key. Live GDELT fusion → needs a cooled-off IP.
 
 ## In progress
-- **Phase 5 verification gate — the two blocked items** (see Current phase). Both AOIs are now primed: vizhinjam and
-  novo-progresso each have a succeeded job with a real scene pair, so the next session can fuse either immediately.
-- Phase 4 **live verification gate** — same key, same unblock. Phase 5's live brief run subsumes most of it.
+- **Phase 5 verification gate — one blocked item remains: the live GDELT query.** Item A (SQL join proof + live stale
+  flip) is **closed 2026-08-20** (brief `1732`, validated live, 0 dangling links). The AOIs are primed (vizhinjam and
+  porto-alegre each have a succeeded job with a real scene pair), so the next fusion run can start immediately once a
+  clean egress IP is available.
+- Phase 4 **live verification gate** — subsumed by the Phase 5 live brief run, which is now done (brief `1732`).
 
 ## Next up
-- **Resolve Phase 5's two blockers** (see Current phase + `HANDOVER-phase-5-live-gate.md` §0 for full evidence):
-  1. A Visa/Mastercard charge (any bank) to fund the Console org — RuPay appears unable to complete one-time
-     international CNP charges. Once funded, Item A (SQL join proof + live stale flip) is a ~10-minute run.
-  2. A live GDELT attempt from a genuinely different network (different ISP or a cloud VPS) — this IP has been
-     blocked for ≥12 days as of 2026-07-26. **Do not retry from this network in the meantime.**
-- **In parallel, start Phase 6 (frontend arena)** — `design-specs/2026-07-12-phase-6-frontend-arena-design.md` →
-  `plans/2026-07-12-phase-6-frontend-arena.md` (9 tasks). Doesn't need either blocker: build and test against
-  `FakeBriefGenerator`/seeded article data now, point at real briefs later at zero rework.
-- Once both Phase 5 blockers clear: run the remaining live-gate proofs, then whole-branch review → merge
-  `phase-5-osint-fusion` → main (branch already pushed to origin).
+- **Resolve the one remaining Phase 5 blocker** (see Current phase + the "Blocked" section for full evidence):
+  1. A live GDELT attempt from a genuinely different network (different ISP or a cloud VPS — not another Wi-Fi/hotspot
+     on the same regional carrier) — this IP has been blocked for weeks as of 2026-07-26. **Do not retry from this
+     network.** One clean attempt is enough: run `POST /aois/{slug}/fusion` from that network and verify admitted
+     articles persist and appear cited in a regenerated brief.
+- Once the live GDELT blocker clears: run the remaining live-gate proof, then whole-branch review → merge
+  `phase-5-osint-fusion` → main (branch already pushed to origin). Phase 6 and the demo (two AOIs, validated briefs)
+  are already merged to main.
 - `gh auth login` is still outstanding if CI status needs checking from the CLI (`gh run list --limit 3`).
 
 ## Open decisions
