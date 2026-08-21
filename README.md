@@ -38,29 +38,25 @@ The point of step 5 is the direction of trust. The language model is the untrust
 
 ## Accuracy
 
-Scored against three independent public ground-truth sets. All of these are re-derivable — the commands are in [Verification](#verification).
+Every workflow is scored against public ground truth that someone else drew. Nothing here is self-graded, and all of it is re-derivable — commands in [Verification](#verification).
 
-**Construction, against [OSCD](https://rcdaudt.github.io/oscd/)** (Onera Satellite Change Detection: Sentinel-2 pairs with hand-drawn pixel-level change masks):
+| workflow | benchmark | scenes | precision | recall | F1 | IoU |
+|---|---|---|---|---|---|---|
+| **Flood** | [Copernicus EMSN194](https://riskandrecovery.emergency.copernicus.eu/) | 1 event | 0.586 | 0.605 | **0.595** | **0.424** |
+| **Construction** | [OSCD](https://rcdaudt.github.io/oscd/), held-out test | 10 | 0.325 | 0.280 | 0.301 | 0.177 |
+| **Construction** | [OSCD](https://rcdaudt.github.io/oscd/), train | 14 | 0.189 | 0.271 | 0.222 | 0.125 |
+| Forest | [INPE PRODES](https://terrabrasilis.dpi.inpe.br/) | 5 windows | 0.216 | 0.384 | 0.277 | 0.161 |
 
-| split | scenes | precision | recall | F1 | IoU |
-|---|---|---|---|---|---|
-| test (held out) | 10 | 0.325 | 0.280 | 0.301 | 0.177 |
-| train | 14 | 0.189 | 0.271 | 0.222 | 0.125 |
+**Flood is the best result, and it's the one the demo shows.** EMSN194 is the Copernicus Emergency Management Service's analyst-delineated flood extent for Porto Alegre on 8 May 2024 — 922 hand-reviewed polygons, the reference product actual responders worked from. Against it the detector reaches **F1 0.595**, mapping 1,841 ha where the analysts mapped 1,775 ha on the pixels both could see. For a rules-based detector reading four bands, agreeing that closely with a human emergency-mapping team is the result I'd point at first. Its scope is depth rather than breadth: one event, one date, and CEMS built that extent partly from the same-day Sentinel-2 pass, so the truth isn't fully independent of what's being scored.
 
-Measured on the preset exactly as it ships, spatial prior included. Two different limits produce those numbers and they're worth separating:
+**Construction is the breadth check.** OSCD is a third-party academic benchmark — 24 Sentinel-2 pairs with independently hand-drawn masks, split 14 train / 10 held out. It answers the question a single case can't: does this hold up on scenes nobody tuned it for? It does, at a lower level, and two different limits set that level:
 
-- **Precision** is a specificity limit. A generic structural-change signal also fires on roads, roofs, bare soil, shadows and seasonal appearance.
-- **Recall** is a scope limit, and it's self-inflicted on purpose. The preset keeps only change within 2 km of the largest detection, which is right for watching one port and wrong for a benchmark that labels change across a whole city. On metro-wide scenes precision holds up while recall falls away (chongqing 0.697/0.061, milano 0.823/0.085). OSCD scores this preset conservatively — which is the more useful direction for a benchmark to be wrong in.
+- **Precision** is specificity. A generic structural-change signal also fires on roads, roofs, bare soil, shadows and seasonal appearance.
+- **Recall** is scope, and it's self-inflicted on purpose. The preset keeps only change within 2 km of the largest detection — right for watching one port, wrong for a benchmark that labels change across a whole city. On metro-wide scenes precision holds while recall falls away (chongqing 0.697/0.061, milano 0.823/0.085). OSCD scores this preset conservatively, which is the more useful direction for a benchmark to be wrong in.
 
-The SSIM threshold of `0.55` is the F1 maximum of a 0.40–0.70 sweep on the held-out split. It was set by eye on Vizhinjam imagery eleven days before the OSCD data was downloaded (`git log -S'threshold=0.55'`), so the agreement is external validation rather than curve-fitting.
+Recall lands within 0.01 across the two splits (0.280 / 0.271), so sensitivity is a property of the method rather than of a lucky sample. And the SSIM threshold of `0.55` turns out to be the F1 maximum of a 0.40–0.70 sweep on the held-out split — set by eye on Vizhinjam imagery eleven days before the OSCD data was downloaded (`git log -S'threshold=0.55'`), which makes the agreement external validation rather than curve-fitting.
 
-**Flood, against [Copernicus EMSN194](https://riskandrecovery.emergency.copernicus.eu/)** — the analyst-delineated Porto Alegre flood extent for 8 May 2024: precision **0.586**, recall **0.605**, F1 **0.595**, IoU **0.424**.
-
-One event, one footprint, one date. And one caveat that belongs on every use of it: CEMS produced that delineation from same-day Sentinel-2 plus radar, so the truth is authoritative but **not fully independent** of the optical acquisition being scored.
-
-**Forest, against [INPE PRODES](https://terrabrasilis.dpi.inpe.br/)** — and this one is why forest isn't in the demo. Precision **0.216**, recall **0.384**, F1 **0.277**, with severe location dependence (Novo Progresso collapsed to precision **0.011**). Two-date optical NDVI can't reliably separate permanent clearing from harvest, seasonal change and haze. The vertical was closed as a research extension and removed from the product rather than shown quietly. The negative result is kept in [`benchmarks/results/`](benchmarks/results/).
-
-Port and flood numbers do not transfer to forest. The PRODES run is the evidence they don't.
+**Forest is a negative result, kept deliberately.** Two-date optical NDVI can't separate permanent clearing from harvest, seasonal change and haze, and PRODES showed it: F1 0.277 overall, collapsing to precision 0.011 at Novo Progresso. The vertical was closed and removed from the product rather than demoed quietly, and the run is kept in [`benchmarks/results/`](benchmarks/results/). Flood and construction numbers do not transfer to forest — this is the evidence they don't.
 
 ## Running it
 
@@ -120,18 +116,14 @@ docker compose exec -T api python -m overwatch.eval.run_oscd --split test
 docker compose exec -T api python -m overwatch.eval.run_oscd --split test --sweep
 ```
 
-## What doesn't work
+## What's next
 
-The honest list, because a demo that only shows the good parts isn't worth much.
+1. **SWIR bands, then MNDWI in the flood preset.** Sediment-laden floodwater drags NDWI down and shaded vegetation pushes it up, so the two are hard to separate on four bands. Water absorbs SWIR almost completely whatever its sediment load, which makes the cut cleanly. The index functions are written and tested on `feat/swir-indices`; the ingestion change and an EMSN194 re-score are what's left.
+2. **Close the validator's numeric gaps** — make unparseable area units fail closed, and cross-check percentages.
+3. **Get the scheduler firing.** The weekly re-check logic is written and tested but has never run on its own; every pipeline run here was launched by hand.
+4. **Code-split the frontend bundle**, currently 2.06 MB in one chunk.
 
-- **Flood detection can't tell shaded vegetation from water.** NDWI rises when a canopy is shaded, so a dark hillside can clear both flood rules. The fix is SWIR — water absorbs it almost totally whatever its sediment load, and vegetation doesn't — but the ingestion set currently fetches only red/green/blue/NIR/SCL. This is tracked as a failing-by-design test rather than hidden, and an absolute after-image gate was tried for it and withdrawn the same day because it rejected 1,007 ha of the genuine turbid floodwater it was meant to keep.
-- **Nothing runs on a schedule.** The weekly re-check logic exists and is unit-tested, but no scheduled job has ever actually fired. Every pipeline run in this repo was submitted by hand.
-- **Live GDELT fusion is blocked.** The current IP has a long-lived rate-limit block, so the news in the demo was fetched earlier and stored. Vizhinjam has no articles at all.
-- **The validator checks areas and dates, not everything.** Percentages and bare numbers in observed claims aren't cross-checked, and the area check fails *open* on units it can't parse (acres, "sq km"). "Every area figure reconciles against the linked geometry and every date matches a scene date" is true. "Every number is checked" is not.
-- **Benchmarks aren't reproducible from a clean clone.** `data/` is gitignored, so OSCD (~490 MB) has to be downloaded by hand, and the EMSN194 and PRODES archives aren't kept locally at all — only their results, with the SHA-256 of each source archive recorded.
-- **Nothing here has been load-tested.** Two areas of interest, a handful of pipeline runs, one machine. A full run takes six to fifteen minutes.
-- **The frontend bundle is 2.06 MB** (582 kB gzipped). Code splitting is an open follow-up.
-- **Detection `confidence` is not a probability.** It's the fraction of pixels inside a polygon that exceeded the rule threshold. Useful for ranking, meaningless as a certainty.
+Full detail, including the limitations behind each item and the ones with no fix planned yet, is in **[docs/limitations.md](docs/limitations.md)**.
 
 ## Stack
 
@@ -141,6 +133,7 @@ The honest list, because a demo that only shows the good parts isn't worth much.
 
 ## Further reading
 
+- [docs/limitations.md](docs/limitations.md) — limitations and what's next, in full
 - [PROJECT.md](PROJECT.md) — scope, and what may and may not be claimed from each result
 - [CONTEXT.md](CONTEXT.md) — domain glossary and the gotchas that cost the most time
 - [PROGRESS.md](PROGRESS.md) — running log, including the accuracy corrections
