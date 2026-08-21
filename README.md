@@ -4,7 +4,7 @@ Satellite change detection with an evidence trail. Give it a place and two dates
 
 ![The Overwatch console showing the May 2024 Porto Alegre floods: a swipe comparison of before and after Sentinel-2 imagery with detected flood polygons outlined, next to a generated intelligence brief](docs/demo.png)
 
-This is a side project, built solo over about seven weeks. It runs on real Sentinel-2 imagery, real Copernicus and INPE ground truth, and a real Claude API key. The accuracy numbers below were measured rather than estimated, and the "What doesn't work" section is deliberately about as long as the rest.
+This is a side project, built solo over about seven weeks. It runs on real Sentinel-2 imagery, real Copernicus and INPE ground truth, and a real Claude API key. The accuracy numbers below were measured against ground truth someone else drew, not estimated, and every limitation I know about is written down in [docs/limitations.md](docs/limitations.md).
 
 ## The two demo areas
 
